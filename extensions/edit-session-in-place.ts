@@ -24,6 +24,7 @@ import {
 import {
 	Container,
 	Editor,
+	Key,
 	SelectList,
 	Spacer,
 	Text,
@@ -33,7 +34,8 @@ import {
 	type TUI,
 } from "@mariozechner/pi-tui";
 
-const HOTKEY = "ctrl+shift+e";
+const HOTKEY = Key.ctrlShift("e");
+const HOTKEY_LABEL = "Ctrl+Shift+E";
 const CLEAR_ALL_KEY = "ctrl+x";
 const COMMAND_NAME = "edit-turn";
 const COMMAND_TEXT = `/${COMMAND_NAME}`;
@@ -42,6 +44,8 @@ const EDIT_TITLE = "Edit previous user message";
 const PREVIEW_MAX_LENGTH = 90;
 const SELECTOR_MAX_VISIBLE = 12;
 const SELECTOR_PAGE_STEP = SELECTOR_MAX_VISIBLE - 1;
+const EXTERNAL_EDITOR_TMP_PREFIX = "pi-reedit-message-";
+const EXTERNAL_EDITOR_FILE_NAME = "message.md";
 
 type TextContentBlock = {
 	type?: string;
@@ -57,6 +61,11 @@ export type EditableUserMessage = {
 	text: string;
 	hasImages: boolean;
 	label: string;
+};
+
+export type ExternalEditorCommand = {
+	executable: string;
+	args: string[];
 };
 
 let draftBeforeHotkey: string | undefined;
@@ -79,6 +88,114 @@ const createEditorTheme = (theme: Theme): EditorTheme => ({
 		noMatch: (text) => theme.fg("warning", text),
 	},
 });
+
+export const resolveExternalEditorCommand = (env: NodeJS.ProcessEnv) => {
+	const visual = env.VISUAL?.trim();
+	if (visual) {
+		return visual;
+	}
+
+	const editor = env.EDITOR?.trim();
+	return editor || undefined;
+};
+
+export const parseExternalEditorCommand = (command: string): ExternalEditorCommand => {
+	const parts: string[] = [];
+	let current = "";
+	let quote: "'" | '"' | undefined;
+	let tokenStarted = false;
+
+	const pushCurrent = () => {
+		if (!tokenStarted) {
+			return;
+		}
+
+		parts.push(current);
+		current = "";
+		tokenStarted = false;
+	};
+
+	for (let index = 0; index < command.length; index += 1) {
+		const character = command[index];
+		if (!character) {
+			continue;
+		}
+
+		if (quote === "'") {
+			if (character === "'") {
+				quote = undefined;
+			} else {
+				current += character;
+			}
+			tokenStarted = true;
+			continue;
+		}
+
+		if (quote === '"') {
+			if (character === '"') {
+				quote = undefined;
+				continue;
+			}
+
+			if (character === "\\") {
+				const next = command[index + 1];
+				if (next && ['"', "\\", "$", "`"].includes(next)) {
+					current += next;
+					index += 1;
+				} else {
+					current += character;
+				}
+				tokenStarted = true;
+				continue;
+			}
+
+			current += character;
+			tokenStarted = true;
+			continue;
+		}
+
+		if (/\s/.test(character)) {
+			pushCurrent();
+			continue;
+		}
+
+		if (character === "'" || character === '"') {
+			quote = character;
+			tokenStarted = true;
+			continue;
+		}
+
+		if (character === "\\") {
+			const next = command[index + 1];
+			if (next && /[\s'"\\]/.test(next)) {
+				current += next;
+				index += 1;
+			} else {
+				current += character;
+			}
+			tokenStarted = true;
+			continue;
+		}
+
+		current += character;
+		tokenStarted = true;
+	}
+
+	if (quote) {
+		throw new Error("Unterminated quote in $VISUAL/$EDITOR.");
+	}
+
+	pushCurrent();
+
+	const [executable, ...args] = parts;
+	if (!executable) {
+		throw new Error("External editor command is empty.");
+	}
+
+	return { executable, args };
+};
+
+export const trimSingleTrailingNewline = (text: string) => text.replace(/\r?\n$/, "");
 
 export const extractEditableText = (content: unknown): { text: string | undefined; hasImages: boolean } => {
 	if (typeof content === "string") {
@@ -285,7 +402,7 @@ class ReeditMessageEditor extends Container implements Focusable {
 		this.addChild(this.editor);
 		this.addChild(new Spacer(1));
 
-		const hasExternalEditor = Boolean(process.env.VISUAL || process.env.EDITOR);
+		const hasExternalEditor = Boolean(resolveExternalEditorCommand(process.env));
 		const hint = [
 			keyHint("tui.select.confirm", "submit"),
 			keyHint("tui.input.newLine", "newline"),
@@ -320,37 +437,44 @@ class ReeditMessageEditor extends Container implements Focusable {
 	}
 
 	private openExternalEditor() {
-		const editorCmd = process.env.VISUAL || process.env.EDITOR;
-		if (!editorCmd) {
+		const editorCommand = resolveExternalEditorCommand(process.env);
+		if (!editorCommand) {
 			return;
 		}
 
 		const currentText = this.editor.getText();
-		const tmpFile = path.join(os.tmpdir(), `pi-reedit-message-${Date.now()}.md`);
+		let parsedCommand: ExternalEditorCommand;
+		try {
+			parsedCommand = parseExternalEditorCommand(editorCommand);
+		} catch {
+			return;
+		}
+
+		const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), EXTERNAL_EDITOR_TMP_PREFIX));
+		const tempFile = path.join(tempDir, EXTERNAL_EDITOR_FILE_NAME);
+		let nextText: string | undefined;
 
 		try {
-			fs.writeFileSync(tmpFile, currentText, "utf-8");
+			fs.writeFileSync(tempFile, currentText, { encoding: "utf-8", flag: "wx", mode: 0o600 });
 			this.tui.stop();
 
-			const [editor, ...editorArgs] = editorCmd.split(" ");
-			const result = spawnSync(editor, [...editorArgs, tmpFile], {
+			const result = spawnSync(parsedCommand.executable, [...parsedCommand.args, tempFile], {
 				stdio: "inherit",
 				shell: process.platform === "win32",
 			});
 
-			if (result.status === 0) {
-				const newContent = fs.readFileSync(tmpFile, "utf-8").replace(/\n$/, "");
-				this.editor.setText(newContent);
+			if (result.status === 0 && !result.error) {
+				nextText = trimSingleTrailingNewline(fs.readFileSync(tempFile, "utf-8"));
 			}
 		} finally {
-			try {
-				fs.unlinkSync(tmpFile);
-			} catch {
-				// Ignore cleanup errors.
-			}
-
+			fs.rmSync(tempDir, { recursive: true, force: true });
 			this.tui.start();
 			this.tui.requestRender(true);
+		}
+
+		if (nextText !== undefined) {
+			this.editor.setText(nextText);
+			this.tui.requestRender();
 		}
 	}
 }
@@ -457,9 +581,23 @@ class EditSessionInPlaceEditor extends CustomEditor {
 
 export default function editSessionInPlace(pi: ExtensionAPI) {
 	pi.registerCommand(COMMAND_NAME, {
-		description: `Select and re-edit a previous user message on the current branch (${HOTKEY})`,
+		description: `Select and re-edit a previous user message on the current branch (${HOTKEY_LABEL})`,
 		handler: async (_args, ctx) => {
 			await handleEditTurn(ctx);
+		},
+	});
+
+	// pi 0.65.2 shortcut handlers receive ExtensionContext, which cannot run slash commands
+	// or navigate the session tree. Keep the custom editor hotkey path for execution, and
+	// register the shortcut here so it appears in /hotkeys and other shortcut diagnostics.
+	pi.registerShortcut(HOTKEY, {
+		description: `Edit a previous user message (${HOTKEY_LABEL})`,
+		handler: (ctx) => {
+			if (!ctx.hasUI) {
+				return;
+			}
+
+			ctx.ui.notify(`Press ${HOTKEY_LABEL} in the main editor to edit a previous message.`, "info");
 		},
 	});
 

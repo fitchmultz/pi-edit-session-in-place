@@ -2,6 +2,16 @@
 
 A [pi](https://github.com/badlogic/pi-mono) extension that lets you rewind to an earlier user message in the current branch, then either **edit it in place** or **delete it and continue from there**.
 
+## Compatibility
+
+Tested with:
+
+- `@mariozechner/pi-coding-agent` `0.65.2`
+- `@mariozechner/pi-tui` `0.65.2`
+- Node.js `>=20.6.0`
+
+The package follows current pi packaging guidance and publishes pi core packages as peer dependencies with `"*"`, while local development and verification in this repo target pi `0.65.2`.
+
 ## What it does
 
 - Adds `/edit-turn`
@@ -29,12 +39,6 @@ Then reload pi from inside the app with:
 
 ```text
 /reload
-```
-
-For local development you can point pi at the extension directly:
-
-```bash
-pi -e ./extensions/edit-session-in-place.ts
 ```
 
 ## Usage
@@ -80,18 +84,35 @@ If you clear the message and submit an empty value, the selected message is effe
 
 ## Development
 
-This repo includes a small regression test in:
+For local development you can point pi at the extension directly:
 
-- `tests/edit-session-in-place.test.ts`
+```bash
+pi -e ./extensions/edit-session-in-place.ts
+```
 
-Checks:
+Local verification:
+
+```bash
+npm run verify
+```
+
+That runs:
+
+- `npm test` — compiles the TypeScript test fixtures to `.test-dist/` and runs them with Node's built-in test runner
+- `npm run typecheck` — strict TypeScript type-checking
+- `npm pack --dry-run` — publishability check for the npm package contents
+
+Current regression coverage in `tests/edit-session-in-place.test.ts` includes:
 
 - message extraction from mixed session content
 - oldest-to-newest ordering for the picker
 - skipping image-only and whitespace-only user messages
 - preserving the image-warning flag for mixed text+image messages
+- `$VISUAL`/`$EDITOR` resolution rules
+- external editor command parsing with quoting/escaping
+- trimming exactly one trailing newline from external-editor output
 
 ## Files
 
 - `extensions/edit-session-in-place.ts` — publishable extension implementation
-- `tests/edit-session-in-place.test.ts` — regression test for message extraction and ordering
+- `tests/edit-session-in-place.test.ts` — regression tests for message extraction, ordering, and external-editor helpers

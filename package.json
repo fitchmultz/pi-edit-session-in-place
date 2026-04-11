@@ -1,6 +1,6 @@
 {
   "name": "pi-edit-session-in-place",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "pi extension that lets you re-edit or delete an earlier user message in the current session branch",
   "author": "Mitch Fultz (https://github.com/fitchmultz)",
   "license": "MIT",
@@ -23,10 +23,13 @@
   },
   "homepage": "https://github.com/fitchmultz/pi-edit-session-in-place#readme",
   "scripts": {
-    "test": "node --experimental-strip-types tests/edit-session-in-place.test.ts",
-    "typecheck": "tsc --noEmit",
-    "check": "npm test && npm run typecheck",
-    "prepublishOnly": "npm run check && npm pack --dry-run"
+    "clean:test": "node -e \"require('node:fs').rmSync('.test-dist', { recursive: true, force: true })\"",
+    "build:test": "npm run clean:test && tsc -p tsconfig.test.json",
+    "test": "npm run build:test && node --test .test-dist/tests/*.test.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "check": "npm run verify",
+    "verify": "npm test && npm run typecheck && npm pack --dry-run",
+    "prepublishOnly": "npm run verify"
   },
   "files": [
     "extensions",
@@ -37,11 +40,17 @@
     "@mariozechner/pi-coding-agent": "*",
     "@mariozechner/pi-tui": "*"
   },
+  "engines": {
+    "node": ">=20.6.0"
+  },
   "devDependencies": {
     "@mariozechner/pi-coding-agent": "^0.65.2",
     "@mariozechner/pi-tui": "^0.65.2",
     "@types/node": "^24.6.0",
     "typescript": "^5.9.3"
+  },
+  "overrides": {
+    "basic-ftp": "5.2.2"
   },
   "pi": {
     "extensions": [

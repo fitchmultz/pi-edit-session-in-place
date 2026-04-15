@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.2] - 2026-04-15
+
+### Changed
+- refreshed the local development and release baseline to pi `0.67.2`, `typescript` `6.0.2`, and `@types/node` `25.6.0`
+- pinned `packageManager` to `npm@11.12.1` and updated the README compatibility notes to match the verified pi baseline
+- refreshed the compatible transitive development dependency set in the lockfile without changing the published `/edit-turn` runtime behavior
+
 ## [0.1.1] - 2026-04-11
 
 ### Changed

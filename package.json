@@ -44,10 +44,10 @@
     "node": ">=20.6.0"
   },
   "devDependencies": {
-    "@mariozechner/pi-coding-agent": "^0.65.2",
-    "@mariozechner/pi-tui": "^0.65.2",
-    "@types/node": "^24.6.0",
-    "typescript": "^5.9.3"
+    "@mariozechner/pi-coding-agent": "^0.67.2",
+    "@mariozechner/pi-tui": "^0.67.2",
+    "@types/node": "^25.6.0",
+    "typescript": "^6.0.2"
   },
   "overrides": {
     "basic-ftp": "5.2.2"
@@ -56,5 +56,6 @@
     "extensions": [
       "./extensions"
     ]
-  }
+  },
+  "packageManager": "npm@11.12.1"
 }

@@ -4,9 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## [0.1.3] - 2026-04-16
+
 ### Changed
 - updated the local pi development baseline to `@mariozechner/pi-coding-agent` / `@mariozechner/pi-tui` `0.67.4`
 - aligned `packageManager` metadata to `npm@10.9.8`, the latest stable npm line compatible with the declared Node runtime floor
+- removed the published `@mariozechner/pi-coding-agent` peer dependency so installs rely on pi's bundled runtime while local development keeps the package in `devDependencies`
 
 ## [0.1.2] - 2026-04-15
 

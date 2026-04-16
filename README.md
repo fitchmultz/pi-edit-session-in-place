@@ -10,7 +10,7 @@ Tested with:
 - `@mariozechner/pi-tui` `0.67.4`
 - Node.js `>=20.6.0`
 
-The package follows current pi packaging guidance and publishes pi core packages as peer dependencies with `"*"`, while local development and verification in this repo target pi `0.67.4`.
+Local development and verification in this repo target pi `0.67.4`. `@mariozechner/pi-coding-agent` stays in `devDependencies` for local typechecking and tests, while the extension relies on pi's bundled runtime packages at execution time.
 
 ## What it does
 

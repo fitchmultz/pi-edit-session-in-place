@@ -6,11 +6,11 @@ A [pi](https://github.com/badlogic/pi-mono) extension that lets you rewind to an
 
 Tested with:
 
-- `@mariozechner/pi-coding-agent` `0.67.2`
-- `@mariozechner/pi-tui` `0.67.2`
+- `@mariozechner/pi-coding-agent` `0.67.4`
+- `@mariozechner/pi-tui` `0.67.4`
 - Node.js `>=20.6.0`
 
-The package follows current pi packaging guidance and publishes pi core packages as peer dependencies with `"*"`, while local development and verification in this repo target pi `0.67.2`.
+The package follows current pi packaging guidance and publishes pi core packages as peer dependencies with `"*"`, while local development and verification in this repo target pi `0.67.4`.
 
 ## What it does
 

@@ -44,8 +44,8 @@
     "node": ">=20.6.0"
   },
   "devDependencies": {
-    "@mariozechner/pi-coding-agent": "^0.67.2",
-    "@mariozechner/pi-tui": "^0.67.2",
+    "@mariozechner/pi-coding-agent": "^0.67.4",
+    "@mariozechner/pi-tui": "^0.67.4",
     "@types/node": "^25.6.0",
     "typescript": "^6.0.2"
   },
@@ -57,5 +57,5 @@
       "./extensions"
     ]
   },
-  "packageManager": "npm@11.12.1"
+  "packageManager": "npm@10.9.8"
 }

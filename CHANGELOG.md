@@ -4,14 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-## [0.1.6] - 2026-04-22
+## [0.1.6] - 2026-04-23
 
 ### Changed
-- updated the local pi development baseline to `@mariozechner/pi-coding-agent` `0.69.0`
+- updated the local pi development baseline to `@mariozechner/pi-coding-agent` `0.70.0`
 - regenerated the npm lockfile against the current stable dependency graph
 
 ### Compatibility
-- reviewed the pi `0.69.0` changelog and confirmed the extension still relies on supported extension APIs without needing the TypeBox migration surface at runtime
+- reviewed the pi `0.70.0` changelog and confirmed the extension still relies on supported extension APIs without needing the TypeBox migration surface at runtime or the changed terminal progress defaults
 
 
 ## [0.1.5] - 2026-04-21

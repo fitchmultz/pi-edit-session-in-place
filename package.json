@@ -1,6 +1,6 @@
 {
   "name": "pi-edit-session-in-place",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "pi extension that lets you re-edit or delete an earlier user message in the current session branch",
   "author": "Mitch Fultz (https://github.com/fitchmultz)",
   "license": "MIT",
@@ -34,6 +34,7 @@
   "files": [
     "extensions",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "peerDependencies": {
@@ -43,7 +44,8 @@
     "node": ">=20.6.0"
   },
   "devDependencies": {
-    "@mariozechner/pi-coding-agent": "^0.70.0",
+    "@mariozechner/pi-coding-agent": "^0.71.1",
+    "@mariozechner/pi-tui": "^0.71.1",
     "@types/node": "^25.6.0",
     "typescript": "^6.0.3"
   },

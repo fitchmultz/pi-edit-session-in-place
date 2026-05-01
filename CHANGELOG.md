@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## [0.1.7] - 2026-05-01
+
+### Changed
+- updated the local pi development baseline to `@mariozechner/pi-coding-agent` / `@mariozechner/pi-tui` `0.71.1`
+- regenerated the npm lockfile against the current stable dependency graph
+
+### Compatibility
+- reviewed the pi `0.71.1` changelog and confirmed the extension still uses supported command, shortcut, and session APIs without relying on removed providers or stale session-replacement objects
+
+
 ## [0.1.6] - 2026-04-23
 
 ### Changed

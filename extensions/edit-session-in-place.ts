@@ -20,7 +20,7 @@ import {
 	type KeybindingsManager,
 	type SessionEntry,
 	type Theme,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import {
 	Container,
 	Editor,
@@ -32,7 +32,7 @@ import {
 	type EditorTheme,
 	type Focusable,
 	type TUI,
-} from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-tui";
 
 const HOTKEY = Key.ctrlShift("e");
 const HOTKEY_LABEL = "Ctrl+Shift+E";

@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## [0.1.9] - 2026-05-07
+
+### Changed
+- migrated the local pi development baseline and peer metadata from deprecated `@mariozechner/*` packages to maintained `@earendil-works/*` `0.74.0`
+- regenerated the npm lockfile against the current stable dependency graph
+
+### Compatibility
+- reviewed the pi `0.74.0` changelog and confirmed the extension still uses supported command, shortcut, and session APIs
+
 ## [0.1.8] - 2026-05-01
 
 ### Changed

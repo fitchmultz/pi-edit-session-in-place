@@ -5,3 +5,6 @@ node_modules/
 npm-debug.log*
 package-lock.json.*
 *.tgz
+
+# CueLoop local/runtime state (do not commit)
+.cueloop/

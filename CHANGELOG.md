@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## [0.1.10] - 2026-05-18
+
+### Changed
+- updated the local pi development baseline to `@earendil-works/pi-coding-agent` / `@earendil-works/pi-tui` `0.75.3` and refreshed the npm lockfile
+- raised the documented Node.js tooling floor to `>=22.19.0`
+- removed legacy Ralph task metadata and ignored local `.cueloop/` runtime state
+
+### Compatibility
+- reviewed current pi `0.75.3` package and extension guidance; the extension continues to use supported command, shortcut, and session APIs
+
+
 ## [0.1.9] - 2026-05-07
 
 ### Changed

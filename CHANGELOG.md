@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Changed
+- updated the local pi development baseline to `@earendil-works/pi-coding-agent` / `@earendil-works/pi-tui` `0.76.0` and regenerated the npm lockfile
+
+### Compatibility
+- reviewed the pi `0.76.0` changelog and package guidance; the extension still uses supported command, shortcut, and session APIs
+
 ## [0.1.11] - 2026-05-23
 
 ### Changed

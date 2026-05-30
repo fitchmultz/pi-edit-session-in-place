@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## [0.1.14] - 2026-05-29
+
+### Changed
+- updated the local pi development baseline to `@earendil-works/pi-coding-agent` / `@earendil-works/pi-tui` `0.78.0` and regenerated the npm lockfile
+- aligned package tooling metadata with the pi fleet policy: `packageManager` now records the npm 11 major line and `engines.node` is `>=22 <25`
+- refreshed README compatibility notes and the fleet-tested pi marker for `0.78.0`
+
+### Compatibility
+- reviewed the pi `0.78.0` changelog and current extension, TUI, session, and package guidance; the extension continues to use supported command, shortcut, custom editor, and session tree APIs
+- confirmed the new startup session naming, file-link rendering, provider, and argument parsing changes do not require runtime changes for this package
+
 ## [0.1.13] - 2026-05-28
 
 ### Changed

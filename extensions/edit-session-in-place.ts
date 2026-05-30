@@ -288,7 +288,7 @@ class EditableMessageSelector extends Container {
 		this.onCancel = onCancel;
 		this.selectedIndex = Math.max(0, messages.length - 1);
 
-		this.addChild(new DynamicBorder((text) => theme.fg("accent", text)));
+		this.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
 		this.addChild(new Spacer(1));
 		this.addChild(new Text(theme.fg("accent", title), 1, 0));
 		this.addChild(new Spacer(1));
@@ -317,7 +317,7 @@ class EditableMessageSelector extends Container {
 			),
 		);
 		this.addChild(new Spacer(1));
-		this.addChild(new DynamicBorder((text) => theme.fg("accent", text)));
+		this.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
 	}
 
 	private setSelectedIndex(index: number) {
@@ -391,7 +391,7 @@ class ReeditMessageEditor extends Container implements Focusable {
 		this.keybindings = keybindings;
 		this.onCancel = onCancel;
 
-		this.addChild(new DynamicBorder((text) => theme.fg("accent", text)));
+		this.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
 		this.addChild(new Spacer(1));
 		this.addChild(new Text(theme.fg("accent", title), 1, 0));
 		this.addChild(new Spacer(1));
@@ -413,7 +413,7 @@ class ReeditMessageEditor extends Container implements Focusable {
 		].join("  ");
 		this.addChild(new Text(hint, 1, 0));
 		this.addChild(new Spacer(1));
-		this.addChild(new DynamicBorder((text) => theme.fg("accent", text)));
+		this.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
 	}
 
 	handleInput(data: string): void {
@@ -587,9 +587,8 @@ export default function editSessionInPlace(pi: ExtensionAPI) {
 		},
 	});
 
-	// pi 0.65.2 shortcut handlers receive ExtensionContext, which cannot run slash commands
-	// or navigate the session tree. Keep the custom editor hotkey path for execution, and
-	// register the shortcut here so it appears in /hotkeys and other shortcut diagnostics.
+	// Shortcut handlers receive ExtensionContext, so the custom editor hotkey path performs
+	// the command execution while this registration keeps the hotkey discoverable.
 	pi.registerShortcut(HOTKEY, {
 		description: `Edit a previous user message (${HOTKEY_LABEL})`,
 		handler: (ctx) => {

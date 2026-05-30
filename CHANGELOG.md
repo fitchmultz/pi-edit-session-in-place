@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Changed
+- updated the local pi development baseline to `@earendil-works/pi-coding-agent` / `@earendil-works/pi-tui` `0.78.0` and regenerated the npm lockfile
+- aligned `engines.node` to `>=22 <25` and pinned `packageManager` to `npm@11.0.0` per fleet tooling policy
+
+### Compatibility
+- no pi `0.78.0` changelog section was published; verified the extension still compiles and passes checks against the `0.78.0` type surface
+
 ## [0.1.13] - 2026-05-28
 
 ### Changed

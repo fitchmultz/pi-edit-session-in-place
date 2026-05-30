@@ -3,7 +3,7 @@
  * Responsibilities: Verify ordering/filtering, image warnings, command parsing, env resolution, and editor output trimming.
  * Scope: Pure helper and low-level behavior tests only; no interactive TUI integration.
  * Usage: Run via `npm test` after compiling test fixtures to `.test-dist`.
- * Invariants/Assumptions: Tests target the published extension entrypoint shape and pi 0.65.2-compatible helper behavior.
+ * Invariants/Assumptions: Tests target the published extension entrypoint shape and current pi helper behavior.
  */
 import assert from "node:assert/strict";
 import test from "node:test";

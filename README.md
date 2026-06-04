@@ -81,7 +81,7 @@ If you clear the message and submit an empty value, the selected message is effe
 - If the selected message contains images, the extension warns that re-editing or deleting it will drop the images and keep only text behavior
 - The extension only offers text-bearing user messages for editing; image-only or whitespace-only user messages are skipped
 - Queued messages must be cleared before using the command
-- If another extension has already customized the main editor, this extension wraps it instead of replacing it
+- The `Ctrl+Shift+E` hotkey is handled by this extension's main-editor component so Pi's registered shortcut dispatcher does not consume it first
 
 ## Development
 

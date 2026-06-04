@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## [0.1.16] - 2026-06-04
+
+### Fixed
+- fixed `Ctrl+Shift+E` after the Pi 0.78.1 update by removing the registered shortcut handler that consumed the key and only showed the placeholder notification
+- added regression coverage that verifies the extension no longer registers a conflicting shortcut handler and still installs the custom editor hotkey path
+
+### Changed
+- removed the custom main-editor wrapper path and returned to the focused custom-editor hotkey path used by the working releases
+
 ## [0.1.15] - 2026-06-04
 
 ### Changed

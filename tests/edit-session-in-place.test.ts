@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
+import editSessionInPlace, {
 	extractEditableText,
 	getEditableMessages,
 	parseExternalEditorCommand,
@@ -155,4 +155,34 @@ test("trimSingleTrailingNewline removes only one final newline", () => {
 	assert.equal(trimSingleTrailingNewline("hello\r\n"), "hello");
 	assert.equal(trimSingleTrailingNewline("hello\n\n"), "hello\n");
 	assert.equal(trimSingleTrailingNewline("hello"), "hello");
+});
+
+test("extension does not register a shortcut handler that can consume the editor hotkey", () => {
+	let sessionStartHandler: ((event: unknown, ctx: any) => void) | undefined;
+	let editorFactory: unknown;
+	let registeredShortcut = false;
+
+	editSessionInPlace({
+		registerCommand() {},
+		registerShortcut() {
+			registeredShortcut = true;
+		},
+		on(event: string, handler: (event: unknown, ctx: any) => void) {
+			if (event === "session_start") {
+				sessionStartHandler = handler;
+			}
+		},
+	} as any);
+
+	sessionStartHandler?.({}, {
+		mode: "tui",
+		ui: {
+			setEditorComponent: (factory: unknown) => {
+				editorFactory = factory;
+			},
+		},
+	});
+
+	assert.equal(registeredShortcut, false);
+	assert.equal(typeof editorFactory, "function", "TUI sessions should install the custom editor hotkey path");
 });

@@ -1,16 +1,16 @@
 # pi edit-session-in-place
 
-A [pi](https://github.com/badlogic/pi-mono) extension that lets you rewind to an earlier user message in the current branch, then either **edit it in place** or **delete it and continue from there**.
+A [pi](https://github.com/earendil-works/pi-mono) extension that lets you rewind to an earlier user message in the current branch, then either **edit it in place** or **delete it and continue from there**.
 
 ## Compatibility
 
 Tested with:
 
-- `@earendil-works/pi-coding-agent` `0.78.0`
-- `@earendil-works/pi-tui` `0.78.0`
+- `@earendil-works/pi-coding-agent` `0.78.1`
+- `@earendil-works/pi-tui` `0.78.1`
 - Node.js `>=22 <25`
 
-Local development and verification in this repo target pi `0.78.0`. `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` stay in `devDependencies` for local typechecking and tests, while pi core packages are declared as optional wildcard peers and the extension relies on pi's bundled runtime packages at execution time. That keeps installs forward-open for future pi releases: npm peer ranges should not block users from trying a newer pi, though runtime behavior is only verified against the tested baseline until a follow-up package release confirms it.
+Local development and verification in this repo target pi `0.78.1` as the suggested minimum tested baseline. `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` stay in `devDependencies` for local typechecking and tests, while pi core packages are declared as optional wildcard peers and the extension relies on pi's bundled runtime packages at execution time. That keeps installs forward-open for future pi releases: npm peer ranges should not block users from trying a newer pi, though runtime behavior is only verified against the tested baseline until a follow-up package release confirms it.
 
 ## What it does
 
@@ -76,11 +76,12 @@ If you clear the message and submit an empty value, the selected message is effe
 
 ## Behavior notes
 
-- Works in interactive mode; non-interactive modes do not show the picker/editor UI
+- Works in interactive TUI mode; non-interactive and RPC modes do not show the picker/editor UI
 - Later messages on the abandoned branch are not deleted from the session file; they remain reachable through `/tree`
 - If the selected message contains images, the extension warns that re-editing or deleting it will drop the images and keep only text behavior
 - The extension only offers text-bearing user messages for editing; image-only or whitespace-only user messages are skipped
 - Queued messages must be cleared before using the command
+- If another extension has already customized the main editor, this extension wraps it instead of replacing it
 
 ## Development
 

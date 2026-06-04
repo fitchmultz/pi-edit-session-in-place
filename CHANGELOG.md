@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## [0.1.15] - 2026-06-04
+
+### Changed
+- updated the local pi development baseline to `@earendil-works/pi-coding-agent` / `@earendil-works/pi-tui` `0.78.1` and regenerated the npm lockfile
+- refreshed README compatibility notes and the fleet-tested pi marker for `0.78.1` without pinning pi `0.78.1` as a hard runtime requirement
+- changed the main-editor integration to wrap any previously configured custom editor instead of replacing it
+
+### Compatibility
+- reviewed the pi `0.78.1` changelog and current extension, TUI, custom editor, mode, session, and package guidance; the extension now guards custom TUI behavior with `ctx.mode === "tui"` and keeps existing custom editors composed
+- confirmed the new `ctx.getSystemPromptOptions()` command API, provider additions, package-install hardening, and security fixes do not require additional runtime changes for this package
+
 ## [0.1.14] - 2026-05-29
 
 ### Changed

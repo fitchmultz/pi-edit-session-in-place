@@ -15,6 +15,7 @@ import {
 	DynamicBorder,
 	keyHint,
 	rawKeyHint,
+	type AppKeybinding,
 	type ExtensionAPI,
 	type ExtensionCommandContext,
 	type KeybindingsManager,
@@ -29,6 +30,8 @@ import {
 	Spacer,
 	Text,
 	matchesKey,
+	type AutocompleteProvider,
+	type EditorComponent,
 	type EditorTheme,
 	type Focusable,
 	type TUI,
@@ -503,7 +506,10 @@ const clearSavedDraft = () => {
 };
 
 const handleEditTurn = async (ctx: ExtensionCommandContext) => {
-	if (!ctx.hasUI) {
+	if (ctx.mode !== "tui") {
+		if (ctx.hasUI) {
+			ctx.ui.notify("/edit-turn requires interactive TUI mode.", "warning");
+		}
 		clearSavedDraft();
 		return;
 	}
@@ -566,16 +572,166 @@ const handleEditTurn = async (ctx: ExtensionCommandContext) => {
 	);
 };
 
+const triggerEditTurnCommand = (editor: Pick<EditorComponent, "getText" | "setText" | "handleInput">) => {
+	draftBeforeHotkey = editor.getText();
+	editor.setText(COMMAND_TEXT);
+	editor.handleInput("\r");
+};
+
 class EditSessionInPlaceEditor extends CustomEditor {
 	handleInput(data: string): void {
 		if (matchesKey(data, HOTKEY)) {
-			draftBeforeHotkey = this.getText();
-			this.setText(COMMAND_TEXT);
-			super.handleInput("\r");
+			triggerEditTurnCommand(this);
 			return;
 		}
 
 		super.handleInput(data);
+	}
+}
+
+type AutocompleteAwareEditor = EditorComponent & {
+	isShowingAutocomplete?: () => boolean;
+};
+
+class EditSessionInPlaceEditorWrapper implements EditorComponent, Focusable {
+	public actionHandlers: Map<AppKeybinding, () => void> = new Map();
+	public onEscape?: () => void;
+	public onCtrlD?: () => void;
+	public onPasteImage?: () => void;
+	public onExtensionShortcut?: (data: string) => boolean | undefined;
+
+	constructor(
+		private readonly base: EditorComponent,
+		private readonly keybindings: KeybindingsManager,
+	) {}
+
+	get focused(): boolean {
+		return "focused" in this.base && typeof this.base.focused === "boolean" ? this.base.focused : false;
+	}
+
+	set focused(value: boolean) {
+		if ("focused" in this.base) {
+			(this.base as EditorComponent & Focusable).focused = value;
+		}
+	}
+
+	get wantsKeyRelease(): boolean | undefined {
+		return this.base.wantsKeyRelease;
+	}
+
+	set wantsKeyRelease(value: boolean | undefined) {
+		this.base.wantsKeyRelease = value;
+	}
+
+	get onSubmit(): ((text: string) => void) | undefined {
+		return this.base.onSubmit;
+	}
+
+	set onSubmit(value: ((text: string) => void) | undefined) {
+		this.base.onSubmit = value;
+	}
+
+	get onChange(): ((text: string) => void) | undefined {
+		return this.base.onChange;
+	}
+
+	set onChange(value: ((text: string) => void) | undefined) {
+		this.base.onChange = value;
+	}
+
+	get borderColor(): ((str: string) => string) | undefined {
+		return this.base.borderColor;
+	}
+
+	set borderColor(value: ((str: string) => string) | undefined) {
+		this.base.borderColor = value;
+	}
+
+	render(width: number): string[] {
+		return this.base.render(width);
+	}
+
+	invalidate(): void {
+		this.base.invalidate();
+	}
+
+	getText(): string {
+		return this.base.getText();
+	}
+
+	setText(text: string): void {
+		this.base.setText(text);
+	}
+
+	handleInput(data: string): void {
+		if (matchesKey(data, HOTKEY)) {
+			triggerEditTurnCommand(this.base);
+			return;
+		}
+
+		if (this.onExtensionShortcut?.(data)) {
+			return;
+		}
+
+		if (this.keybindings.matches(data, "app.clipboard.pasteImage")) {
+			this.onPasteImage?.();
+			return;
+		}
+
+		if (this.keybindings.matches(data, "app.interrupt")) {
+			const isShowingAutocomplete = (this.base as AutocompleteAwareEditor).isShowingAutocomplete?.() ?? false;
+			if (!isShowingAutocomplete) {
+				const handler = this.onEscape ?? this.actionHandlers.get("app.interrupt");
+				if (handler) {
+					handler();
+					return;
+				}
+			}
+
+			this.base.handleInput(data);
+			return;
+		}
+
+		if (this.keybindings.matches(data, "app.exit") && this.base.getText().length === 0) {
+			const handler = this.onCtrlD ?? this.actionHandlers.get("app.exit");
+			if (handler) {
+				handler();
+			}
+			return;
+		}
+
+		for (const [action, handler] of this.actionHandlers) {
+			if (action !== "app.interrupt" && action !== "app.exit" && this.keybindings.matches(data, action)) {
+				handler();
+				return;
+			}
+		}
+
+		this.base.handleInput(data);
+	}
+
+	addToHistory(text: string): void {
+		this.base.addToHistory?.(text);
+	}
+
+	insertTextAtCursor(text: string): void {
+		this.base.insertTextAtCursor?.(text);
+	}
+
+	getExpandedText(): string {
+		return this.base.getExpandedText?.() ?? this.base.getText();
+	}
+
+	setAutocompleteProvider(provider: AutocompleteProvider): void {
+		this.base.setAutocompleteProvider?.(provider);
+	}
+
+	setPaddingX(padding: number): void {
+		this.base.setPaddingX?.(padding);
+	}
+
+	setAutocompleteMaxVisible(maxVisible: number): void {
+		this.base.setAutocompleteMaxVisible?.(maxVisible);
 	}
 }
 
@@ -600,15 +756,18 @@ export default function editSessionInPlace(pi: ExtensionAPI) {
 		},
 	});
 
-	pi.on("session_start", async () => {
+	pi.on("session_start", (_event, ctx) => {
 		clearSavedDraft();
+		if (ctx.mode === "tui") {
+			const previousEditor = ctx.ui.getEditorComponent();
+			ctx.ui.setEditorComponent((tui, theme, keybindings) => {
+				const baseEditor = previousEditor?.(tui, theme, keybindings);
+				return baseEditor ? new EditSessionInPlaceEditorWrapper(baseEditor, keybindings) : new EditSessionInPlaceEditor(tui, theme, keybindings);
+			});
+		}
 	});
 
 	pi.on("session_shutdown", async () => {
 		clearSavedDraft();
-	});
-
-	pi.on("session_start", (_event, ctx) => {
-		ctx.ui.setEditorComponent((tui, theme, keybindings) => new EditSessionInPlaceEditor(tui, theme, keybindings));
 	});
 }

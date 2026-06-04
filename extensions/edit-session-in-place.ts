@@ -569,11 +569,27 @@ const handleEditTurn = async (ctx: ExtensionCommandContext) => {
 	);
 };
 
+export const getEditTurnCommandText = (commands: Array<{ name: string }>) => {
+	const candidates = commands
+		.map((command) => command.name)
+		.filter((name) => name === COMMAND_NAME || name.startsWith(`${COMMAND_NAME}:`));
+	return `/${candidates.at(-1) ?? COMMAND_NAME}`;
+};
+
 class EditSessionInPlaceEditor extends CustomEditor {
+	constructor(
+		tui: TUI,
+		theme: EditorTheme,
+		keybindings: KeybindingsManager,
+		private readonly getCommandText: () => string,
+	) {
+		super(tui, theme, keybindings);
+	}
+
 	handleInput(data: string): void {
 		if (matchesKey(data, HOTKEY)) {
 			draftBeforeHotkey = this.getText();
-			this.setText(COMMAND_TEXT);
+			this.setText(this.getCommandText());
 			super.handleInput("\r");
 			return;
 		}
@@ -593,7 +609,9 @@ export default function editSessionInPlace(pi: ExtensionAPI) {
 	pi.on("session_start", (_event, ctx) => {
 		clearSavedDraft();
 		if (ctx.mode === "tui") {
-			ctx.ui.setEditorComponent((tui, theme, keybindings) => new EditSessionInPlaceEditor(tui, theme, keybindings));
+			ctx.ui.setEditorComponent((tui, theme, keybindings) =>
+				new EditSessionInPlaceEditor(tui, theme, keybindings, () => getEditTurnCommandText(pi.getCommands())),
+			);
 		}
 	});
 

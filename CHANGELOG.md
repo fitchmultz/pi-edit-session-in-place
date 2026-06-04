@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## [0.1.17] - 2026-06-04
+
+### Fixed
+- fixed the editor hotkey command dispatch when duplicate installs suffix the command as `/edit-turn:1`, `/edit-turn:2`, etc.
+- removed the local project package setting accidentally left by release verification so the repo no longer loads a duplicate project copy during local reloads
+
 ## [0.1.16] - 2026-06-04
 
 ### Fixed

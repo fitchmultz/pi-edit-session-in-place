@@ -70,7 +70,7 @@ Ctrl+Shift+E
 - `Enter` submits the edited message
 - `Shift+Enter` inserts a newline
 - `Escape` cancels without changing history
-- `Ctrl+G` opens your external editor if `$VISUAL` or `$EDITOR` is set
+- `Ctrl+G` opens your external editor if `$VISUAL` or `$EDITOR` is set; parse or launch failures are reported as warnings
 
 If you clear the message and submit an empty value, the selected message is effectively deleted: pi rewinds to just before that message and leaves the main editor empty so you can type a new prompt.
 
@@ -82,6 +82,7 @@ If you clear the message and submit an empty value, the selected message is effe
 - The extension only offers text-bearing user messages for editing; image-only or whitespace-only user messages are skipped
 - Queued messages must be cleared before using the command
 - The `Ctrl+Shift+E` hotkey is handled by this extension's main-editor component so Pi's registered shortcut dispatcher does not consume it first
+- The hotkey component wraps any previously configured custom editor when possible instead of replacing it
 
 ## Development
 

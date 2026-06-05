@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## [0.1.18] - 2026-06-05
+
+### Fixed
+- preserved expanded editor text when the edit hotkey or external-editor path sees pi paste markers
+- wrapped any existing custom editor when installing the `Ctrl+Shift+E` hotkey path, while preserving app action handlers for `CustomEditor`-style bases
+- reported malformed or failing `$VISUAL` / `$EDITOR` launches as warnings instead of silently ignoring them
+
 ## [0.1.17] - 2026-06-04
 
 ### Fixed

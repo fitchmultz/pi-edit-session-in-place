@@ -11,9 +11,10 @@ import test from "node:test";
 import editSessionInPlace, {
 	extractEditableText,
 	getEditableMessages,
+	getEditTurnCommandText,
+	getExpandedEditorText,
 	parseExternalEditorCommand,
 	resolveExternalEditorCommand,
-	getEditTurnCommandText,
 	trimSingleTrailingNewline,
 } from "../extensions/edit-session-in-place.js";
 
@@ -158,6 +159,17 @@ test("trimSingleTrailingNewline removes only one final newline", () => {
 	assert.equal(trimSingleTrailingNewline("hello"), "hello");
 });
 
+test("getExpandedEditorText prefers marker-expanded editor content", () => {
+	assert.equal(
+		getExpandedEditorText({
+			getText: () => "[paste #1 +20 lines]",
+			getExpandedText: () => "expanded paste content",
+		}),
+		"expanded paste content",
+	);
+	assert.equal(getExpandedEditorText({ getText: () => "plain editor content" }), "plain editor content");
+});
+
 test("getEditTurnCommandText uses the latest suffixed invocation when duplicate packages are loaded", () => {
 	assert.equal(getEditTurnCommandText([]), "/edit-turn");
 	assert.equal(getEditTurnCommandText([{ name: "edit-turn" }]), "/edit-turn");
@@ -187,6 +199,7 @@ test("extension does not register a shortcut handler that can consume the editor
 	sessionStartHandler?.({}, {
 		mode: "tui",
 		ui: {
+			getEditorComponent: () => undefined,
 			setEditorComponent: (factory: unknown) => {
 				editorFactory = factory;
 			},
@@ -195,4 +208,79 @@ test("extension does not register a shortcut handler that can consume the editor
 
 	assert.equal(registeredShortcut, false);
 	assert.equal(typeof editorFactory, "function", "TUI sessions should install the custom editor hotkey path");
+});
+
+test("custom editor hotkey wraps existing editors and restores expanded drafts", async () => {
+	let sessionStartHandler: ((event: unknown, ctx: any) => void) | undefined;
+	let commandHandler: ((args: string, ctx: any) => Promise<void>) | undefined;
+	let editorFactory: ((tui: unknown, theme: unknown, keybindings: any) => any) | undefined;
+	let previousFactoryCalled = false;
+	const baseActionHandlers = new Map();
+	const setTextCalls: string[] = [];
+	const handledInputs: string[] = [];
+	const baseEditor = {
+		actionHandlers: baseActionHandlers,
+		getText: () => "[paste #1 +20 lines]",
+		getExpandedText: () => "expanded draft",
+		setText: (text: string) => {
+			setTextCalls.push(text);
+		},
+		handleInput: (data: string) => {
+			handledInputs.push(data);
+		},
+		render: () => [],
+		invalidate() {},
+	};
+
+	editSessionInPlace({
+		registerCommand(name: string, options: { handler: (args: string, ctx: any) => Promise<void> }) {
+			if (name === "edit-turn") {
+				commandHandler = options.handler;
+			}
+		},
+		registerShortcut() {},
+		on(event: string, handler: (event: unknown, ctx: any) => void) {
+			if (event === "session_start") {
+				sessionStartHandler = handler;
+			}
+		},
+		getCommands: () => [{ name: "edit-turn" }],
+	} as any);
+
+	sessionStartHandler?.({}, {
+		mode: "tui",
+		ui: {
+			getEditorComponent: () => () => {
+				previousFactoryCalled = true;
+				return baseEditor;
+			},
+			setEditorComponent: (factory: typeof editorFactory) => {
+				editorFactory = factory;
+			},
+		},
+	});
+
+	const editor = editorFactory?.({}, {}, { matches: () => false });
+	editor?.onAction("app.interrupt", () => undefined);
+	editor?.handleInput("\x1b[69;6u");
+
+	let restoredDraft: string | undefined;
+	await commandHandler?.("", {
+		mode: "tui",
+		hasPendingMessages: () => false,
+		isIdle: () => true,
+		sessionManager: { getBranch: () => [] },
+		ui: {
+			notify() {},
+			setEditorText: (text: string) => {
+				restoredDraft = text;
+			},
+		},
+	});
+
+	assert.equal(previousFactoryCalled, true, "hotkey editor should wrap an existing custom editor factory");
+	assert.deepEqual(setTextCalls, ["/edit-turn"]);
+	assert.deepEqual(handledInputs, ["\r"]);
+	assert.equal(restoredDraft, "expanded draft");
+	assert.equal(baseActionHandlers.has("app.interrupt"), true, "app action handlers should be delegated to CustomEditor-like bases");
 });

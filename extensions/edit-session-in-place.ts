@@ -15,6 +15,7 @@ import {
 	DynamicBorder,
 	keyHint,
 	rawKeyHint,
+	type AppKeybinding,
 	type ExtensionAPI,
 	type ExtensionCommandContext,
 	type KeybindingsManager,
@@ -28,7 +29,9 @@ import {
 	SelectList,
 	Spacer,
 	Text,
+	isFocusable,
 	matchesKey,
+	type EditorComponent,
 	type EditorTheme,
 	type Focusable,
 	type TUI,
@@ -196,6 +199,9 @@ export const parseExternalEditorCommand = (command: string): ExternalEditorComma
 };
 
 export const trimSingleTrailingNewline = (text: string) => text.replace(/\r?\n$/, "");
+
+export const getExpandedEditorText = (editor: Pick<EditorComponent, "getText" | "getExpandedText">) =>
+	editor.getExpandedText?.() ?? editor.getText();
 
 export const extractEditableText = (content: unknown): { text: string | undefined; hasImages: boolean } => {
 	if (typeof content === "string") {
@@ -366,6 +372,7 @@ class ReeditMessageEditor extends Container implements Focusable {
 	private readonly tui: TUI;
 	private readonly keybindings: KeybindingsManager;
 	private readonly onCancel: () => void;
+	private readonly onError: (message: string) => void;
 	private _focused = false;
 
 	get focused(): boolean {
@@ -385,11 +392,13 @@ class ReeditMessageEditor extends Container implements Focusable {
 		prefill: string,
 		onSubmit: (value: string) => void,
 		onCancel: () => void,
+		onError: (message: string) => void,
 	) {
 		super();
 		this.tui = tui;
 		this.keybindings = keybindings;
 		this.onCancel = onCancel;
+		this.onError = onError;
 
 		this.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
 		this.addChild(new Spacer(1));
@@ -442,17 +451,19 @@ class ReeditMessageEditor extends Container implements Focusable {
 			return;
 		}
 
-		const currentText = this.editor.getText();
+		const currentText = getExpandedEditorText(this.editor);
 		let parsedCommand: ExternalEditorCommand;
 		try {
 			parsedCommand = parseExternalEditorCommand(editorCommand);
-		} catch {
+		} catch (error) {
+			this.onError(error instanceof Error ? error.message : "Failed to parse $VISUAL/$EDITOR.");
 			return;
 		}
 
 		const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), EXTERNAL_EDITOR_TMP_PREFIX));
 		const tempFile = path.join(tempDir, EXTERNAL_EDITOR_FILE_NAME);
 		let nextText: string | undefined;
+		let errorMessage: string | undefined;
 
 		try {
 			fs.writeFileSync(tempFile, currentText, { encoding: "utf-8", flag: "wx", mode: 0o600 });
@@ -463,13 +474,22 @@ class ReeditMessageEditor extends Container implements Focusable {
 				shell: process.platform === "win32",
 			});
 
-			if (result.status === 0 && !result.error) {
+			if (result.error) {
+				errorMessage = `External editor failed: ${result.error.message}`;
+			} else if (result.status !== 0) {
+				errorMessage = `External editor exited with status ${result.status ?? "unknown"}.`;
+			} else {
 				nextText = trimSingleTrailingNewline(fs.readFileSync(tempFile, "utf-8"));
 			}
 		} finally {
 			fs.rmSync(tempDir, { recursive: true, force: true });
 			this.tui.start();
 			this.tui.requestRender(true);
+		}
+
+		if (errorMessage) {
+			this.onError(errorMessage);
+			return;
 		}
 
 		if (nextText !== undefined) {
@@ -486,7 +506,16 @@ const selectEditableMessage = async (ctx: ExtensionCommandContext, messages: Edi
 
 const editTextInCustomEditor = async (ctx: ExtensionCommandContext, prefill: string) =>
 	ctx.ui.custom<string | undefined>((tui, theme, keybindings, done) =>
-		new ReeditMessageEditor(tui, theme, keybindings, EDIT_TITLE, prefill, (value) => done(value), () => done(undefined)),
+		new ReeditMessageEditor(
+			tui,
+			theme,
+			keybindings,
+			EDIT_TITLE,
+			prefill,
+			(value) => done(value),
+			() => done(undefined),
+			(message) => ctx.ui.notify(message, "warning"),
+		),
 	);
 
 const restoreDraftIfNeeded = (ctx: ExtensionCommandContext) => {
@@ -576,25 +605,166 @@ export const getEditTurnCommandText = (commands: Array<{ name: string }>) => {
 	return `/${candidates.at(-1) ?? COMMAND_NAME}`;
 };
 
-class EditSessionInPlaceEditor extends CustomEditor {
+type CustomEditorHooks = {
+	actionHandlers: Map<AppKeybinding, () => void>;
+	onEscape?: () => void;
+	onCtrlD?: () => void;
+	onPasteImage?: () => void;
+	onExtensionShortcut?: (data: string) => boolean | undefined;
+};
+
+const getCustomEditorHooks = (editor: EditorComponent): (EditorComponent & CustomEditorHooks) | undefined => {
+	const candidate = editor as Partial<CustomEditorHooks>;
+	return candidate.actionHandlers instanceof Map ? (editor as EditorComponent & CustomEditorHooks) : undefined;
+};
+
+class EditSessionInPlaceEditor implements EditorComponent, Focusable {
+	private readonly customBase: (EditorComponent & CustomEditorHooks) | undefined;
+
 	constructor(
-		tui: TUI,
-		theme: EditorTheme,
-		keybindings: KeybindingsManager,
+		private readonly base: EditorComponent,
 		private readonly getCommandText: () => string,
 	) {
-		super(tui, theme, keybindings);
+		this.customBase = getCustomEditorHooks(base);
+	}
+
+	get actionHandlers(): Map<AppKeybinding, () => void> | undefined {
+		return this.customBase?.actionHandlers;
+	}
+
+	get focused(): boolean {
+		return isFocusable(this.base) ? this.base.focused : false;
+	}
+
+	set focused(value: boolean) {
+		if (isFocusable(this.base)) {
+			this.base.focused = value;
+		}
+	}
+
+	get wantsKeyRelease(): boolean | undefined {
+		return this.base.wantsKeyRelease;
+	}
+
+	get onSubmit(): ((text: string) => void) | undefined {
+		return this.base.onSubmit;
+	}
+
+	set onSubmit(handler: ((text: string) => void) | undefined) {
+		this.base.onSubmit = handler;
+	}
+
+	get onChange(): ((text: string) => void) | undefined {
+		return this.base.onChange;
+	}
+
+	set onChange(handler: ((text: string) => void) | undefined) {
+		this.base.onChange = handler;
+	}
+
+	get borderColor(): ((str: string) => string) | undefined {
+		return this.base.borderColor;
+	}
+
+	set borderColor(handler: ((str: string) => string) | undefined) {
+		if (this.base.borderColor !== undefined) {
+			this.base.borderColor = handler;
+		}
+	}
+
+	get onEscape(): (() => void) | undefined {
+		return this.customBase?.onEscape;
+	}
+
+	set onEscape(handler: (() => void) | undefined) {
+		if (this.customBase) {
+			this.customBase.onEscape = handler;
+		}
+	}
+
+	get onCtrlD(): (() => void) | undefined {
+		return this.customBase?.onCtrlD;
+	}
+
+	set onCtrlD(handler: (() => void) | undefined) {
+		if (this.customBase) {
+			this.customBase.onCtrlD = handler;
+		}
+	}
+
+	get onPasteImage(): (() => void) | undefined {
+		return this.customBase?.onPasteImage;
+	}
+
+	set onPasteImage(handler: (() => void) | undefined) {
+		if (this.customBase) {
+			this.customBase.onPasteImage = handler;
+		}
+	}
+
+	get onExtensionShortcut(): ((data: string) => boolean | undefined) | undefined {
+		return this.customBase?.onExtensionShortcut;
+	}
+
+	set onExtensionShortcut(handler: ((data: string) => boolean | undefined) | undefined) {
+		if (this.customBase) {
+			this.customBase.onExtensionShortcut = handler;
+		}
+	}
+
+	onAction(action: AppKeybinding, handler: () => void): void {
+		this.customBase?.actionHandlers.set(action, handler);
+	}
+
+	render(width: number): string[] {
+		return this.base.render(width);
+	}
+
+	invalidate(): void {
+		this.base.invalidate();
+	}
+
+	getText(): string {
+		return this.base.getText();
+	}
+
+	getExpandedText(): string {
+		return getExpandedEditorText(this.base);
+	}
+
+	setText(text: string): void {
+		this.base.setText(text);
+	}
+
+	addToHistory(text: string): void {
+		this.base.addToHistory?.(text);
+	}
+
+	insertTextAtCursor(text: string): void {
+		this.base.insertTextAtCursor?.(text);
+	}
+
+	setAutocompleteProvider(provider: Parameters<NonNullable<EditorComponent["setAutocompleteProvider"]>>[0]): void {
+		this.base.setAutocompleteProvider?.(provider);
+	}
+
+	setPaddingX(padding: number): void {
+		this.base.setPaddingX?.(padding);
+	}
+
+	setAutocompleteMaxVisible(maxVisible: number): void {
+		this.base.setAutocompleteMaxVisible?.(maxVisible);
 	}
 
 	handleInput(data: string): void {
 		if (matchesKey(data, HOTKEY)) {
-			draftBeforeHotkey = this.getText();
-			this.setText(this.getCommandText());
-			super.handleInput("\r");
+			draftBeforeHotkey = getExpandedEditorText(this.base);
+			this.base.setText(this.getCommandText());
+			this.base.handleInput("\r");
 			return;
 		}
 
-		super.handleInput(data);
+		this.base.handleInput(data);
 	}
 }
 
@@ -609,9 +779,11 @@ export default function editSessionInPlace(pi: ExtensionAPI) {
 	pi.on("session_start", (_event, ctx) => {
 		clearSavedDraft();
 		if (ctx.mode === "tui") {
-			ctx.ui.setEditorComponent((tui, theme, keybindings) =>
-				new EditSessionInPlaceEditor(tui, theme, keybindings, () => getEditTurnCommandText(pi.getCommands())),
-			);
+			const previousEditorFactory = ctx.ui.getEditorComponent();
+			ctx.ui.setEditorComponent((tui, theme, keybindings) => {
+				const baseEditor = previousEditorFactory?.(tui, theme, keybindings) ?? new CustomEditor(tui, theme, keybindings);
+				return new EditSessionInPlaceEditor(baseEditor, () => getEditTurnCommandText(pi.getCommands()));
+			});
 		}
 	});
 

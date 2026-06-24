@@ -79,7 +79,16 @@ const collapseWhitespace = (text: string) => text.replace(/\s+/g, " ").trim();
 const truncate = (text: string, maxLength: number) =>
 	text.length <= maxLength ? text : `${text.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
 
-const formatTimestamp = (timestamp: string) => timestamp.slice(0, 16).replace("T", " ");
+export const formatTimestamp = (timestamp: string) => {
+	const date = new Date(timestamp);
+	if (Number.isNaN(date.getTime())) {
+		// ponytail: malformed/unknown timestamps fall back to the raw slice rather than rendering NaN fields
+		return timestamp.slice(0, 16).replace("T", " ");
+	}
+
+	const pad = (value: number) => value.toString().padStart(2, "0");
+	return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
 
 const createEditorTheme = (theme: Theme): EditorTheme => ({
 	borderColor: (text) => theme.fg("accent", text),

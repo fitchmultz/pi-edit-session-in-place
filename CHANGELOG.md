@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## [0.1.22] - 2026-06-24
+
+### Fixed
+- picker timestamps now render in the local timezone instead of the raw UTC session timestamp, so the message list shows the times users expect for their timezone (with a safe fallback for malformed timestamps)
+- removed the stale `basic-ftp` npm `overrides` entry: the transitive advisory that prompted it (0.1.4) is long resolved, `npm ls basic-ftp` is empty, and `npm audit` is clean
+
+### Changed
+- reconciled the local development install against pi `0.80.2`: `node_modules` and `package-lock.json` now resolve `@earendil-works/pi-coding-agent` / `@earendil-works/pi-tui` to the declared devDependency range. The 0.1.21 bump declared `0.80.1` but the installed tree was still pinned to `0.79.10`, so local typechecks ran against stale types
+- refreshed README compatibility notes for pi `0.80.2` and aligned the documented Node.js floor with the `engines.node` field (`>=22 <25`)
+
+### Tests
+- added non-circular `formatTimestamp` regression coverage under fixed timezones (UTC, America/New_York, Pacific/Auckland) and malformed-input/padding cases, so timestamp behavior is pinned independently of the production helper
+
+### Validation
+- ran `npm run verify` (tests, strict typecheck, `npm pack --dry-run`), `npm audit`, and a live `pi -e` extension load under pi `0.80.2`
+
 ## [0.1.21] - 2026-06-23
 
 ### Changed

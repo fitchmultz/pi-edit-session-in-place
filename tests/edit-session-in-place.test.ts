@@ -5,11 +5,15 @@
  * Usage: Run via `npm test` after compiling test fixtures to `.test-dist`.
  * Invariants/Assumptions: Tests target the published extension entrypoint shape and current pi helper behavior.
  */
+import { spawnSync } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import assert from "node:assert/strict";
 import test from "node:test";
 
 import editSessionInPlace, {
 	extractEditableText,
+	formatTimestamp,
 	getEditableMessages,
 	getEditTurnCommandText,
 	getExpandedEditorText,
@@ -109,7 +113,47 @@ test("getEditableMessages keeps oldest-to-newest order and skips non-editable us
 	assert.equal(messages[0]?.text, "First prompt");
 	assert.equal(messages[1]?.hasImages, true, "mixed text+image message should keep image warning flag");
 	assert.equal(messages[2]?.text, "Latest prompt");
-	assert.match(messages[2]?.label ?? "", /^3\. 2026-04-07 12:04 — Latest prompt$/);
+	const expectedLatestLabel = `3. ${formatTimestamp("2026-04-07T12:04:00.000Z")} — Latest prompt`;
+	assert.equal(messages[2]?.label, expectedLatestLabel);
+});
+
+// Run the compiled formatTimestamp under a fixed TZ in a child process. Node pins the
+// timezone at startup from the environment, so a subprocess is the reliable way to assert
+// concrete local-time output regardless of the contributor's machine timezone.
+const compiledExtensionPath = path.join(
+	path.dirname(fileURLToPath(import.meta.url)),
+	"../extensions/edit-session-in-place.js",
+);
+const formatTimestampAtTz = (tz: string, ...inputs: string[]) => {
+	const script = `import { formatTimestamp } from ${JSON.stringify(
+		pathToFileURL(compiledExtensionPath).href,
+	)}; process.stdout.write(JSON.stringify(${JSON.stringify(inputs)}.map(formatTimestamp)));`;
+	const result = spawnSync(process.execPath, ["--input-type=module", "-e", script], {
+		env: { ...process.env, TZ: tz },
+		encoding: "utf-8",
+	});
+	assert.equal(result.status, 0, `formatTimestamp subprocess failed for TZ=${tz}: ${result.stderr}`);
+	return JSON.parse(result.stdout) as string[];
+};
+
+test("formatTimestamp renders local time under fixed timezones with concrete expected values", () => {
+	const instant = "2026-04-07T12:04:00.000Z";
+
+	// UTC: no offset.
+	assert.deepEqual(formatTimestampAtTz("UTC", instant), ["2026-04-07 12:04"]);
+	// America/New_York in April is EDT (UTC-4).
+	assert.deepEqual(formatTimestampAtTz("America/New_York", instant), ["2026-04-07 08:04"]);
+	// Pacific/Auckland in April is NZST (UTC+12): the instant rolls into the next day.
+	assert.deepEqual(formatTimestampAtTz("Pacific/Auckland", instant), ["2026-04-08 00:04"]);
+});
+
+test("formatTimestamp falls back to the raw slice for malformed timestamps and pads single-digit fields", () => {
+	// Malformed input: no Date math applies, returns the raw slice (machine-independent).
+	assert.equal(formatTimestamp("bad"), "bad");
+	assert.equal(formatTimestamp(""), "");
+
+	// Single-digit month/day/hour/minute all pad to two digits. January 2, 00:05 UTC.
+	assert.deepEqual(formatTimestampAtTz("UTC", "2026-01-02T00:05:00.000Z"), ["2026-01-02 00:05"]);
 });
 
 test("resolveExternalEditorCommand prefers VISUAL and ignores blank values", () => {

@@ -40,10 +40,11 @@ import {
 const HOTKEY = Key.ctrlShift("e");
 const HOTKEY_LABEL = "Ctrl+Shift+E";
 const CLEAR_ALL_KEY = "ctrl+x";
+const TOGGLE_ASSISTANT_KEY = "ctrl+a";
 const COMMAND_NAME = "edit-turn";
 const COMMAND_TEXT = `/${COMMAND_NAME}`;
 const SELECT_TITLE = "Pick a previous user message to edit";
-const EDIT_TITLE = "Edit previous user message";
+const EDIT_TITLE = "Edit previous message";
 const PREVIEW_MAX_LENGTH = 90;
 const SELECTOR_MAX_VISIBLE = 12;
 const SELECTOR_PAGE_STEP = SELECTOR_MAX_VISIBLE - 1;
@@ -59,12 +60,16 @@ type ImageContentBlock = {
 	type?: string;
 };
 
-export type EditableUserMessage = {
+export type EditableMessage = {
 	entryId: string;
+	parentId: string | null;
+	role: "user" | "assistant";
 	text: string;
 	hasImages: boolean;
 	label: string;
 };
+
+export type EditableUserMessage = EditableMessage;
 
 export type ExternalEditorCommand = {
 	executable: string;
@@ -249,14 +254,18 @@ export const extractEditableText = (content: unknown): { text: string | undefine
 	};
 };
 
-export const getEditableMessages = (branch: SessionEntry[]): EditableUserMessage[] => {
-	const editable: EditableUserMessage[] = [];
-	const userEntries = branch.filter(
-		(entry): entry is SessionEntry & { type: "message"; message: { role: "user"; content: unknown } } =>
-			entry.type === "message" && entry.message.role === "user",
-	);
+export const getEditableMessages = (branch: SessionEntry[], options: { includeAssistant?: boolean } = {}): EditableMessage[] => {
+	const editable: EditableMessage[] = [];
 
-	for (const entry of userEntries) {
+	for (const entry of branch) {
+		if (entry.type !== "message" || (entry.message.role !== "user" && entry.message.role !== "assistant")) {
+			continue;
+		}
+
+		if (entry.message.role === "assistant" && !options.includeAssistant) {
+			continue;
+		}
+
 		const { text, hasImages } = extractEditableText(entry.message.content);
 		if (!text) {
 			continue;
@@ -268,9 +277,11 @@ export const getEditableMessages = (branch: SessionEntry[]): EditableUserMessage
 		const index = editable.length + 1;
 		editable.push({
 			entryId: entry.id,
+			parentId: entry.parentId,
+			role: entry.message.role,
 			text,
 			hasImages,
-			label: `${index}. ${formatTimestamp(entry.timestamp)} — ${preview}${suffix}`,
+			label: `${index}. ${formatTimestamp(entry.timestamp)} — ${entry.message.role === "assistant" ? "assistant — " : ""}${preview}${suffix}`,
 		});
 	}
 
@@ -280,41 +291,43 @@ export const getEditableMessages = (branch: SessionEntry[]): EditableUserMessage
 class EditableMessageSelector extends Container {
 	private readonly tui: TUI;
 	private readonly keybindings: KeybindingsManager;
-	private readonly messages: EditableUserMessage[];
-	private readonly selectList: SelectList;
-	private readonly onSelect: (message: EditableUserMessage) => void;
+	private readonly userMessages: EditableMessage[];
+	private readonly allMessages: EditableMessage[];
+	private readonly selectTheme: ReturnType<typeof createEditorTheme>["selectList"];
+	private selectList: SelectList;
+	private readonly onSelect: (message: EditableMessage) => void;
 	private readonly onCancel: () => void;
+	private messages: EditableMessage[];
 	private selectedIndex: number;
+	private includeAssistant = false;
 
 	constructor(
 		tui: TUI,
 		theme: Theme,
 		keybindings: KeybindingsManager,
 		title: string,
-		messages: EditableUserMessage[],
-		onSelect: (message: EditableUserMessage) => void,
+		userMessages: EditableMessage[],
+		allMessages: EditableMessage[],
+		onSelect: (message: EditableMessage) => void,
 		onCancel: () => void,
 	) {
 		super();
 		this.tui = tui;
 		this.keybindings = keybindings;
-		this.messages = messages;
+		this.userMessages = userMessages;
+		this.allMessages = allMessages;
+		this.messages = userMessages;
+		this.selectTheme = createEditorTheme(theme).selectList;
 		this.onSelect = onSelect;
 		this.onCancel = onCancel;
-		this.selectedIndex = Math.max(0, messages.length - 1);
+		this.selectedIndex = Math.max(0, userMessages.length - 1);
 
 		this.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
 		this.addChild(new Spacer(1));
 		this.addChild(new Text(theme.fg("accent", title), 1, 0));
 		this.addChild(new Spacer(1));
 
-		this.selectList = new SelectList(
-			messages.map((message) => ({ value: message.entryId, label: message.label })),
-			SELECTOR_MAX_VISIBLE,
-			createEditorTheme(theme).selectList,
-			{ minPrimaryColumnWidth: 56, maxPrimaryColumnWidth: 120 },
-		);
-		this.selectList.setSelectedIndex(this.selectedIndex);
+		this.selectList = this.createSelectList();
 		this.addChild(this.selectList);
 		this.addChild(new Spacer(1));
 		this.addChild(
@@ -324,6 +337,7 @@ class EditableMessageSelector extends Container {
 					rawKeyHint("↓", "newer"),
 					keyHint("tui.select.pageUp", "jump up"),
 					keyHint("tui.select.pageDown", "jump down"),
+					rawKeyHint("ctrl+a", "show assistants"),
 					keyHint("tui.select.confirm", "edit"),
 					keyHint("tui.select.cancel", "cancel"),
 				].join("  "),
@@ -335,9 +349,36 @@ class EditableMessageSelector extends Container {
 		this.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
 	}
 
+	private createSelectList() {
+		const selectList = new SelectList(
+			this.messages.map((message) => ({ value: message.entryId, label: message.label })),
+			SELECTOR_MAX_VISIBLE,
+			this.selectTheme,
+			{ minPrimaryColumnWidth: 56, maxPrimaryColumnWidth: 120 },
+		);
+		selectList.setSelectedIndex(this.selectedIndex);
+		return selectList;
+	}
+
 	private setSelectedIndex(index: number) {
 		this.selectedIndex = clamp(index, 0, this.messages.length - 1);
 		this.selectList.setSelectedIndex(this.selectedIndex);
+		this.tui.requestRender();
+	}
+
+	private toggleAssistantMessages() {
+		const selectedEntryId = this.messages[this.selectedIndex]?.entryId;
+		this.includeAssistant = !this.includeAssistant;
+		this.messages = this.includeAssistant ? this.allMessages : this.userMessages;
+		const keptIndex = selectedEntryId ? this.messages.findIndex((message) => message.entryId === selectedEntryId) : -1;
+		this.selectedIndex = keptIndex >= 0 ? keptIndex : Math.max(0, this.messages.length - 1);
+
+		const previousSelectList = this.selectList;
+		this.selectList = this.createSelectList();
+		const childIndex = this.children.indexOf(previousSelectList);
+		if (childIndex >= 0) {
+			this.children[childIndex] = this.selectList;
+		}
 		this.tui.requestRender();
 	}
 
@@ -359,6 +400,11 @@ class EditableMessageSelector extends Container {
 
 		if (this.keybindings.matches(data, "tui.select.pageDown")) {
 			this.setSelectedIndex(this.selectedIndex + SELECTOR_PAGE_STEP);
+			return;
+		}
+
+		if (matchesKey(data, TOGGLE_ASSISTANT_KEY)) {
+			this.toggleAssistantMessages();
 			return;
 		}
 
@@ -508,9 +554,18 @@ class ReeditMessageEditor extends Container implements Focusable {
 	}
 }
 
-const selectEditableMessage = async (ctx: ExtensionCommandContext, messages: EditableUserMessage[]) =>
-	ctx.ui.custom<EditableUserMessage | undefined>((tui, theme, keybindings, done) =>
-		new EditableMessageSelector(tui, theme, keybindings, SELECT_TITLE, messages, (message) => done(message), () => done(undefined)),
+const selectEditableMessage = async (ctx: ExtensionCommandContext, userMessages: EditableMessage[], allMessages: EditableMessage[]) =>
+	ctx.ui.custom<EditableMessage | undefined>((tui, theme, keybindings, done) =>
+		new EditableMessageSelector(
+			tui,
+			theme,
+			keybindings,
+			SELECT_TITLE,
+			userMessages,
+			allMessages,
+			(message) => done(message),
+			() => done(undefined),
+		),
 	);
 
 const editTextInCustomEditor = async (ctx: ExtensionCommandContext, prefill: string) =>
@@ -540,6 +595,68 @@ const clearSavedDraft = () => {
 	draftBeforeHotkey = undefined;
 };
 
+type WritableSessionManager = {
+	branch(entryId: string): void;
+	resetLeaf(): void;
+	appendMessage(message: unknown): string;
+	appendCustomEntry(customType: string, data?: unknown): string;
+};
+
+const asWritableSessionManager = (ctx: ExtensionCommandContext) => ctx.sessionManager as unknown as WritableSessionManager;
+
+const editAssistantMessage = async (ctx: ExtensionCommandContext, selected: EditableMessage, editedText: string) => {
+	if (!selected.parentId) {
+		ctx.ui.notify("Cannot edit an assistant message with no parent entry.", "warning");
+		return false;
+	}
+
+	const original = ctx.sessionManager.getEntry(selected.entryId);
+	if (original?.type !== "message" || original.message.role !== "assistant") {
+		ctx.ui.notify("Could not find the selected assistant message.", "warning");
+		return false;
+	}
+
+	const oldLeafId = ctx.sessionManager.getLeafId();
+	const parentResult = await ctx.navigateTree(selected.parentId, { summarize: false });
+	if (parentResult.cancelled) {
+		return false;
+	}
+
+	const sessionManager = asWritableSessionManager(ctx);
+	const targetId =
+		editedText.trim().length === 0
+			? sessionManager.appendCustomEntry("edit-session-in-place:assistant-delete", { deletedEntryId: selected.entryId })
+			: sessionManager.appendMessage({
+					role: "assistant",
+					content: [{ type: "text", text: editedText }],
+					api: original.message.api,
+					provider: original.message.provider,
+					model: original.message.model,
+					usage: {
+						input: 0,
+						output: 0,
+						cacheRead: 0,
+						cacheWrite: 0,
+						totalTokens: 0,
+						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+					},
+					stopReason: original.message.stopReason,
+					timestamp: original.message.timestamp,
+				});
+
+	sessionManager.branch(selected.parentId);
+	const result = await ctx.navigateTree(targetId, { summarize: false });
+	if (result.cancelled) {
+		if (oldLeafId) {
+			sessionManager.branch(oldLeafId);
+		} else {
+			sessionManager.resetLeaf();
+		}
+		return false;
+	}
+	return true;
+};
+
 const handleEditTurn = async (ctx: ExtensionCommandContext) => {
 	if (ctx.mode !== "tui") {
 		if (ctx.hasUI) {
@@ -560,14 +677,15 @@ const handleEditTurn = async (ctx: ExtensionCommandContext) => {
 		await ctx.waitForIdle();
 	}
 
-	const editableMessages = getEditableMessages(ctx.sessionManager.getBranch());
-	if (editableMessages.length === 0) {
+	const userMessages = getEditableMessages(ctx.sessionManager.getBranch());
+	const allMessages = getEditableMessages(ctx.sessionManager.getBranch(), { includeAssistant: true });
+	if (userMessages.length === 0) {
 		ctx.ui.notify("No editable text user messages found on the current branch.", "warning");
 		restoreDraftIfNeeded(ctx);
 		return;
 	}
 
-	const selected = await selectEditableMessage(ctx, editableMessages);
+	const selected = await selectEditableMessage(ctx, userMessages, allMessages);
 	if (!selected) {
 		restoreDraftIfNeeded(ctx);
 		return;
@@ -591,6 +709,18 @@ const handleEditTurn = async (ctx: ExtensionCommandContext) => {
 	}
 
 	const isDelete = editedText.trim().length === 0;
+	if (selected.role === "assistant") {
+		const ok = await editAssistantMessage(ctx, selected, editedText);
+		if (!ok) {
+			restoreDraftIfNeeded(ctx);
+			return;
+		}
+
+		clearSavedDraft();
+		ctx.ui.notify(isDelete ? "Assistant message deleted." : "Assistant message edited.", "info");
+		return;
+	}
+
 	const result = await ctx.navigateTree(selected.entryId, { summarize: false });
 	if (result.cancelled) {
 		restoreDraftIfNeeded(ctx);

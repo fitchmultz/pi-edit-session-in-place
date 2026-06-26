@@ -17,8 +17,9 @@ Local development and verification in this repo target pi `0.80.2` as the sugges
 - Adds `/edit-turn`
 - Adds a global hotkey: `Ctrl+Shift+E`
 - Lets you choose an earlier user message from the current branch
+- Press `Ctrl+A` in the picker to also show assistant messages
 - Rewinds pi to that point in the same session file
-- Loads your edited text back into the main editor
+- Loads edited user text back into the main editor, or writes an edited assistant response onto a new branch
 - Treats an empty submit as **delete this message and continue from here**
 
 ## Install
@@ -57,7 +58,8 @@ Ctrl+Shift+E
 
 ### Message picker behavior
 
-- Shows earlier user messages from the current branch only
+- Shows earlier user messages from the current branch only by default
+- `Ctrl+A` toggles assistant messages into the same picker
 - Uses a viewport so long threads stay navigable
 - Orders messages **oldest → newest**
 - Starts with the **newest** message selected at the bottom
@@ -72,14 +74,14 @@ Ctrl+Shift+E
 - `Escape` cancels without changing history
 - `Ctrl+G` opens your external editor if `$VISUAL` or `$EDITOR` is set; parse or launch failures are reported as warnings
 
-If you clear the message and submit an empty value, the selected message is effectively deleted: pi rewinds to just before that message and leaves the main editor empty so you can type a new prompt.
+If you clear a user message and submit an empty value, the selected message is effectively deleted: pi rewinds to just before that message and leaves the main editor empty so you can type a new prompt. If you clear an assistant message, pi rewinds to just before that response.
 
 ## Behavior notes
 
 - Works in interactive TUI mode; non-interactive and RPC modes do not show the picker/editor UI
 - Later messages on the abandoned branch are not deleted from the session file; they remain reachable through `/tree`
 - If the selected message contains images, the extension warns that re-editing or deleting it will drop the images and keep only text behavior
-- The extension only offers text-bearing user messages for editing; image-only or whitespace-only user messages are skipped
+- The extension only offers text-bearing user messages by default; `Ctrl+A` also includes text-bearing assistant messages. Image-only or whitespace-only user messages are skipped
 - Queued messages must be cleared before using the command
 - The `Ctrl+Shift+E` hotkey is handled by this extension's main-editor component so Pi's registered shortcut dispatcher does not consume it first
 - The hotkey component wraps any previously configured custom editor when possible instead of replacing it
@@ -107,6 +109,7 @@ That runs:
 Current regression coverage in `tests/edit-session-in-place.test.ts` includes:
 
 - message extraction from mixed session content
+- optional assistant-message inclusion
 - oldest-to-newest ordering for the picker
 - skipping image-only and whitespace-only user messages
 - preserving the image-warning flag for mixed text+image messages

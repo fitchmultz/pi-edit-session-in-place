@@ -117,6 +117,22 @@ test("getEditableMessages keeps oldest-to-newest order and skips non-editable us
 	assert.equal(messages[2]?.label, expectedLatestLabel);
 });
 
+test("getEditableMessages can include assistant text when requested", () => {
+	const messages = getEditableMessages(branch, { includeAssistant: true });
+
+	assert.deepEqual(
+		messages.map((message) => [message.entryId, message.role]),
+		[
+			["u1", "user"],
+			["a1", "assistant"],
+			["u4", "user"],
+			["u5", "user"],
+		],
+	);
+	assert.equal(messages[1]?.text, "Reply");
+	assert.match(messages[1]?.label ?? "", /assistant — Reply$/);
+});
+
 // Run the compiled formatTimestamp under a fixed TZ in a child process. Node pins the
 // timezone at startup from the environment, so a subprocess is the reliable way to assert
 // concrete local-time output regardless of the contributor's machine timezone.

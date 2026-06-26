@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## [0.1.23] - 2026-06-26
+
+### Added
+- `Ctrl+A` in the edit picker now toggles text-bearing assistant responses into the selectable list while keeping the default user-message-only picker unchanged
+- assistant responses can be rewritten onto a new branch, or removed by submitting an empty edit
+
+### Tests
+- added regression coverage for optional assistant-message extraction
+
 ## [0.1.22] - 2026-06-24
 
 ### Fixed

@@ -76,8 +76,6 @@ export type ExternalEditorCommand = {
 	args: string[];
 };
 
-let draftBeforeHotkey: string | undefined;
-
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(value, max));
 const collapseWhitespace = (text: string) => text.replace(/\s+/g, " ").trim();
 
@@ -582,93 +580,146 @@ const editTextInCustomEditor = async (ctx: ExtensionCommandContext, prefill: str
 		),
 	);
 
-const restoreDraftIfNeeded = (ctx: ExtensionCommandContext) => {
-	if (draftBeforeHotkey === undefined) {
-		return;
-	}
+type DraftState = { value?: string };
 
-	ctx.ui.setEditorText(draftBeforeHotkey);
-	draftBeforeHotkey = undefined;
+const restoreDraftIfNeeded = (ctx: ExtensionCommandContext, draft: DraftState) => {
+	if (draft.value === undefined) return;
+	ctx.ui.setEditorText(draft.value);
+	draft.value = undefined;
 };
 
-const clearSavedDraft = () => {
-	draftBeforeHotkey = undefined;
-};
-
-type WritableSessionManager = {
+type WritableSessionManagerAdapter = {
 	branch(entryId: string): void;
 	resetLeaf(): void;
 	appendMessage(message: unknown): string;
 	appendCustomEntry(customType: string, data?: unknown): string;
+	appendCustomMessageEntry(customType: string, content: unknown, display: boolean, details?: unknown): string;
 };
 
-const asWritableSessionManager = (ctx: ExtensionCommandContext) => ctx.sessionManager as unknown as WritableSessionManager;
+const WRITABLE_SESSION_METHODS = [
+	"branch",
+	"resetLeaf",
+	"appendMessage",
+	"appendCustomEntry",
+	"appendCustomMessageEntry",
+] as const;
 
-const editAssistantMessage = async (ctx: ExtensionCommandContext, selected: EditableMessage, editedText: string) => {
+/** Pi 0.80.6 compatibility boundary for assistant rewriting's private mutations. */
+export const getWritableSessionManagerAdapter = (value: unknown): WritableSessionManagerAdapter | undefined => {
+	if (!value || typeof value !== "object") return undefined;
+	const candidate = value as Record<string, unknown>;
+	if (!WRITABLE_SESSION_METHODS.every((method) => typeof candidate[method] === "function")) return undefined;
+	return value as WritableSessionManagerAdapter;
+};
+
+export const editAssistantMessage = async (ctx: ExtensionCommandContext, selected: EditableMessage, editedText: string) => {
 	if (!selected.parentId) {
 		ctx.ui.notify("Cannot edit an assistant message with no parent entry.", "warning");
 		return false;
 	}
 
+	const sessionManager = getWritableSessionManagerAdapter(ctx.sessionManager);
+	if (!sessionManager) {
+		ctx.ui.notify("Assistant editing is unavailable with this Pi session runtime.", "warning");
+		return false;
+	}
+
 	const original = ctx.sessionManager.getEntry(selected.entryId);
-	if (original?.type !== "message" || original.message.role !== "assistant") {
-		ctx.ui.notify("Could not find the selected assistant message.", "warning");
+	const parent = ctx.sessionManager.getEntry(selected.parentId);
+	if (original?.type !== "message" || original.message.role !== "assistant" || !parent) {
+		ctx.ui.notify("Could not find the selected assistant message and its preceding branch.", "warning");
 		return false;
 	}
 
 	const oldLeafId = ctx.sessionManager.getLeafId();
-	const parentResult = await ctx.navigateTree(selected.parentId, { summarize: false });
-	if (parentResult.cancelled) {
+	const oldLeaf = oldLeafId ? ctx.sessionManager.getEntry(oldLeafId) : undefined;
+	if (!oldLeafId || !oldLeaf || (oldLeaf.type === "message" && oldLeaf.message.role === "user") || oldLeaf.type === "custom_message") {
+		ctx.ui.notify("Cannot safely restore the current session position.", "warning");
 		return false;
 	}
 
-	const sessionManager = asWritableSessionManager(ctx);
-	const targetId =
-		editedText.trim().length === 0
-			? sessionManager.appendCustomEntry("edit-session-in-place:assistant-delete", { deletedEntryId: selected.entryId })
-			: sessionManager.appendMessage({
-					role: "assistant",
-					content: [{ type: "text", text: editedText }],
-					api: original.message.api,
-					provider: original.message.provider,
-					model: original.message.model,
-					usage: {
-						input: 0,
-						output: 0,
-						cacheRead: 0,
-						cacheWrite: 0,
-						totalTokens: 0,
-						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-					},
-					stopReason: original.message.stopReason,
-					timestamp: original.message.timestamp,
-				});
-
-	sessionManager.branch(selected.parentId);
-	const result = await ctx.navigateTree(targetId, { summarize: false });
-	if (result.cancelled) {
-		if (oldLeafId) {
-			sessionManager.branch(oldLeafId);
-		} else {
-			sessionManager.resetLeaf();
+	const restore = async () => {
+		try {
+			return !(await ctx.navigateTree(oldLeafId, { summarize: false })).cancelled;
+		} catch {
+			return false;
 		}
+	};
+	let synchronizedLeafId: string | null | undefined;
+	let replacementNavigationStarted = false;
+
+	try {
+		const parentResult = await ctx.navigateTree(selected.parentId, { summarize: false });
+		if (parentResult.cancelled) return false;
+
+		synchronizedLeafId = ctx.sessionManager.getLeafId();
+		// Pi navigates before editable user/custom messages. Replay only that dropped parent;
+		// tool results, compactions, metadata, and other non-user parents stay on the branch.
+		if (parent.type === "message" && parent.message.role === "user") {
+			sessionManager.appendMessage(parent.message);
+		} else if (parent.type === "custom_message") {
+			sessionManager.appendCustomMessageEntry(parent.customType, parent.content, parent.display, parent.details);
+		}
+
+		const targetId =
+			editedText.trim().length === 0
+				? sessionManager.appendCustomEntry("edit-session-in-place:assistant-delete", { deletedEntryId: selected.entryId })
+				: sessionManager.appendMessage({
+						role: "assistant",
+						content: [{ type: "text", text: editedText }],
+						api: original.message.api,
+						provider: original.message.provider,
+						model: original.message.model,
+						usage: {
+							input: 0,
+							output: 0,
+							cacheRead: 0,
+							cacheWrite: 0,
+							totalTokens: 0,
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+						},
+						stopReason: original.message.stopReason,
+						timestamp: original.message.timestamp,
+					});
+
+		// Return the manager to the leaf represented by the live agent before public
+		// navigation. If replacement or restoration is cancelled, both stay aligned.
+		if (synchronizedLeafId) sessionManager.branch(synchronizedLeafId);
+		else sessionManager.resetLeaf();
+		replacementNavigationStarted = true;
+		const result = await ctx.navigateTree(targetId, { summarize: false });
+		if (!result.cancelled) return true;
+	} catch {
+		if (!replacementNavigationStarted && synchronizedLeafId !== undefined) {
+			if (synchronizedLeafId) sessionManager.branch(synchronizedLeafId);
+			else sessionManager.resetLeaf();
+		}
+		if (await restore()) {
+			ctx.ui.notify("Assistant editing failed; the prior runtime state was restored.", "warning");
+			return false;
+		}
+		ctx.ui.notify("Assistant editing failed; Pi kept the last synchronized session position.", "warning");
 		return false;
 	}
-	return true;
+
+	if (!(await restore())) {
+		ctx.ui.notify("Assistant editing was cancelled; Pi kept the last synchronized session position.", "warning");
+	}
+	return false;
 };
 
-const handleEditTurn = async (ctx: ExtensionCommandContext) => {
+const handleEditTurn = async (ctx: ExtensionCommandContext, draft: DraftState) => {
 	if (ctx.mode !== "tui") {
 		if (ctx.hasUI) {
 			ctx.ui.notify("/edit-turn requires interactive TUI mode.", "warning");
 		}
-		clearSavedDraft();
+		draft.value = undefined;
 		return;
 	}
 
 	if (ctx.hasPendingMessages()) {
 		ctx.ui.notify("Queued messages are pending. Press Escape first, then try again.", "warning");
-		restoreDraftIfNeeded(ctx);
+		restoreDraftIfNeeded(ctx, draft);
 		return;
 	}
 
@@ -681,13 +732,13 @@ const handleEditTurn = async (ctx: ExtensionCommandContext) => {
 	const allMessages = getEditableMessages(ctx.sessionManager.getBranch(), { includeAssistant: true });
 	if (userMessages.length === 0) {
 		ctx.ui.notify("No editable text user messages found on the current branch.", "warning");
-		restoreDraftIfNeeded(ctx);
+		restoreDraftIfNeeded(ctx, draft);
 		return;
 	}
 
 	const selected = await selectEditableMessage(ctx, userMessages, allMessages);
 	if (!selected) {
-		restoreDraftIfNeeded(ctx);
+		restoreDraftIfNeeded(ctx, draft);
 		return;
 	}
 
@@ -697,14 +748,14 @@ const handleEditTurn = async (ctx: ExtensionCommandContext) => {
 			"That message contains images. Editing or deleting it here will keep only the text and drop the images. Continue?",
 		);
 		if (!keepGoing) {
-			restoreDraftIfNeeded(ctx);
+			restoreDraftIfNeeded(ctx, draft);
 			return;
 		}
 	}
 
 	const editedText = await editTextInCustomEditor(ctx, selected.text);
 	if (editedText === undefined) {
-		restoreDraftIfNeeded(ctx);
+		restoreDraftIfNeeded(ctx, draft);
 		return;
 	}
 
@@ -712,22 +763,22 @@ const handleEditTurn = async (ctx: ExtensionCommandContext) => {
 	if (selected.role === "assistant") {
 		const ok = await editAssistantMessage(ctx, selected, editedText);
 		if (!ok) {
-			restoreDraftIfNeeded(ctx);
+			restoreDraftIfNeeded(ctx, draft);
 			return;
 		}
 
-		clearSavedDraft();
+		draft.value = undefined;
 		ctx.ui.notify(isDelete ? "Assistant message deleted." : "Assistant message edited.", "info");
 		return;
 	}
 
 	const result = await ctx.navigateTree(selected.entryId, { summarize: false });
 	if (result.cancelled) {
-		restoreDraftIfNeeded(ctx);
+		restoreDraftIfNeeded(ctx, draft);
 		return;
 	}
 
-	clearSavedDraft();
+	draft.value = undefined;
 	ctx.ui.setEditorText(isDelete ? "" : editedText);
 	ctx.ui.notify(
 		isDelete
@@ -763,6 +814,7 @@ class EditSessionInPlaceEditor implements EditorComponent, Focusable {
 	constructor(
 		private readonly base: EditorComponent,
 		private readonly getCommandText: () => string,
+		private readonly saveDraft: (draft: string) => void,
 	) {
 		this.customBase = getCustomEditorHooks(base);
 	}
@@ -897,7 +949,7 @@ class EditSessionInPlaceEditor implements EditorComponent, Focusable {
 
 	handleInput(data: string): void {
 		if (matchesKey(data, HOTKEY)) {
-			draftBeforeHotkey = getExpandedEditorText(this.base);
+			this.saveDraft(getExpandedEditorText(this.base));
 			this.base.setText(this.getCommandText());
 			this.base.handleInput("\r");
 			return;
@@ -908,25 +960,28 @@ class EditSessionInPlaceEditor implements EditorComponent, Focusable {
 }
 
 export default function editSessionInPlace(pi: ExtensionAPI) {
+	const draft: DraftState = {};
 	pi.registerCommand(COMMAND_NAME, {
 		description: `Select and re-edit a previous user message on the current branch (${HOTKEY_LABEL})`,
 		handler: async (_args, ctx) => {
-			await handleEditTurn(ctx);
+			await handleEditTurn(ctx, draft);
 		},
 	});
 
 	pi.on("session_start", (_event, ctx) => {
-		clearSavedDraft();
+		draft.value = undefined;
 		if (ctx.mode === "tui") {
 			const previousEditorFactory = ctx.ui.getEditorComponent();
 			ctx.ui.setEditorComponent((tui, theme, keybindings) => {
 				const baseEditor = previousEditorFactory?.(tui, theme, keybindings) ?? new CustomEditor(tui, theme, keybindings);
-				return new EditSessionInPlaceEditor(baseEditor, () => getEditTurnCommandText(pi.getCommands()));
+				return new EditSessionInPlaceEditor(baseEditor, () => getEditTurnCommandText(pi.getCommands()), (value) => {
+					draft.value = value;
+				});
 			});
 		}
 	});
 
 	pi.on("session_shutdown", async () => {
-		clearSavedDraft();
+		draft.value = undefined;
 	});
 }

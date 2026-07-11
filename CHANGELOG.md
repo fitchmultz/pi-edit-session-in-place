@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+- scoped hotkey draft state to each extension instance and clear it on session lifecycle boundaries so reload, new, resume, and fork flows cannot restore a stale draft
+- made assistant edits and deletes preserve the full preceding branch when the response follows tool results, custom messages, compactions, or metadata; direct user and custom-message parents dropped by Pi navigation are replayed
+- validate the Pi 0.80.6 private writable `SessionManager` adapter before navigation, and keep the manager leaf and live agent context synchronized even when both replacement navigation and restoration are cancelled
+
+### Changed
+- updated the local Pi development and verification baseline to `0.80.6`
+
+### Tests
+- added real Pi 0.80.6 `SessionManager`/`AgentSession.navigateTree` regression coverage for assistant edit/delete after tool results, custom/compaction/metadata parent preservation, incompatible adapters, double cancellation, and post-navigation failure restoration
+- added regression coverage for draft clearing across replacement-session startup
+
 ## [0.1.23] - 2026-06-26
 
 ### Added

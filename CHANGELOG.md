@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## [0.1.24] - 2026-07-11
+
 ### Fixed
 - scoped hotkey draft state to each extension instance and clear it on session lifecycle boundaries so reload, new, resume, and fork flows cannot restore a stale draft
 - made assistant edits and deletes preserve the full preceding branch when the response follows tool results, custom messages, compactions, or metadata; direct user and custom-message parents dropped by Pi navigation are replayed

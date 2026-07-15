@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Changed
+- refreshed the local Pi development lock, tested private `SessionManager` compatibility boundary, and documentation for Pi `0.80.7`
+
 ## [0.1.24] - 2026-07-11
 
 ### Fixed

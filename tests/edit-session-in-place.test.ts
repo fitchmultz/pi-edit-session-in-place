@@ -180,7 +180,7 @@ const assertRuntimeSynchronized = (manager: SessionManager, runtime: any) => {
 	assert.deepEqual(runtime.agent.state.messages, manager.buildSessionContext().messages);
 };
 
-test("assistant edit follows real Pi 0.80.6 user-target navigation and preserves the prompt", async () => {
+test("assistant edit follows real Pi 0.80.7 user-target navigation and preserves the prompt", async () => {
 	const { manager, runtime, ctx, selected } = makeRealPiHarness();
 	assert.equal(await editAssistantMessage(ctx, selected, "New response"), true);
 
@@ -191,7 +191,7 @@ test("assistant edit follows real Pi 0.80.6 user-target navigation and preserves
 	assertRuntimeSynchronized(manager, runtime);
 });
 
-test("assistant delete follows real Pi 0.80.6 semantics and keeps the prompt in live context", async () => {
+test("assistant delete follows real Pi 0.80.7 semantics and keeps the prompt in live context", async () => {
 	const { manager, runtime, ctx, selected } = makeRealPiHarness();
 	assert.equal(await editAssistantMessage(ctx, selected, ""), true);
 
@@ -257,7 +257,7 @@ const makeToolResultHarness = (cancelNavigation?: (call: number, targetId: strin
 };
 
 for (const [operation, text] of [["edit", "Rewritten final response"], ["delete", ""]] as const) {
-	test(`assistant ${operation} preserves user→assistant(tool)→toolResult under real Pi 0.80.6 navigation`, async () => {
+	test(`assistant ${operation} preserves user→assistant(tool)→toolResult under real Pi 0.80.7 navigation`, async () => {
 		const { manager, runtime, ctx, selected, promptId, toolAssistantId, toolResultId } = makeToolResultHarness();
 		assert.equal(await editAssistantMessage(ctx, selected, text), true);
 
@@ -406,7 +406,7 @@ test("failure after replacement navigation restores SessionManager leaf and live
 	assertRuntimeSynchronized(manager, runtime);
 });
 
-test("writable session adapter accepts only the Pi 0.80.6 mutation methods it uses", () => {
+test("writable session adapter accepts only the Pi 0.80.7 mutation methods it uses", () => {
 	const compatible = {
 		branch() {},
 		resetLeaf() {},

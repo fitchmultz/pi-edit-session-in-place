@@ -2,7 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## [0.1.26] - 2026-07-16
+
+### Changed
+- refreshed the local Pi development lock, private `SessionManager` compatibility assertions, and documentation for Pi `0.80.9`; wildcard runtime peers remain unchanged
 
 ## [0.1.25] - 2026-07-14
 

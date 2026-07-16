@@ -604,7 +604,7 @@ const WRITABLE_SESSION_METHODS = [
 	"appendCustomMessageEntry",
 ] as const;
 
-/** Pi 0.80.7 compatibility boundary for assistant rewriting's private mutations. */
+/** Pi 0.80.9 compatibility boundary for assistant rewriting's private mutations. */
 export const getWritableSessionManagerAdapter = (value: unknown): WritableSessionManagerAdapter | undefined => {
 	if (!value || typeof value !== "object") return undefined;
 	const candidate = value as Record<string, unknown>;

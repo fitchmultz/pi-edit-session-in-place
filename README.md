@@ -8,7 +8,7 @@ Tested with:
 
 - `@earendil-works/pi-coding-agent` `0.80.9`
 - `@earendil-works/pi-tui` `0.80.9`
-- Node.js `>=22 <25`
+- Node.js `>=22`
 
 Local development and verification in this repo target pi `0.80.9` as the suggested minimum tested baseline. `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` stay in `devDependencies` for local typechecking and tests, while pi core packages are declared as optional wildcard peers and the extension relies on pi's bundled runtime packages at execution time. That keeps installs forward-open for future pi releases: npm peer ranges should not block users from trying a newer pi, though runtime behavior is only verified against the tested baseline until a follow-up package release confirms it.
 

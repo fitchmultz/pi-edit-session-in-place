@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.27] - 2026-08-03
+
+### Changed
+- opened `engines.node` to `>=22` so Node 25/26 are not rejected; the Node 22 floor is unchanged
+
 ## [0.1.26] - 2026-07-16
 
 ### Changed

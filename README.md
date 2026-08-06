@@ -4,13 +4,9 @@ A [pi](https://github.com/earendil-works/pi-mono) extension that lets you rewind
 
 ## Compatibility
 
-Tested with:
+Requires Pi `0.84.0` or later and Node.js `>=22.19.0`.
 
-- `@earendil-works/pi-coding-agent` `0.80.9`
-- `@earendil-works/pi-tui` `0.80.9`
-- Node.js `>=22`
-
-Local development and verification in this repo target pi `0.80.9` as the suggested minimum tested baseline. `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` stay in `devDependencies` for local typechecking and tests, while pi core packages are declared as optional wildcard peers and the extension relies on pi's bundled runtime packages at execution time. That keeps installs forward-open for future pi releases: npm peer ranges should not block users from trying a newer pi, though runtime behavior is only verified against the tested baseline until a follow-up package release confirms it.
+Local development and verification pin `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` to exactly `0.84.0`. Pi core packages remain optional wildcard peers because the extension uses Pi's bundled runtime packages rather than installing another copy.
 
 ## What it does
 
@@ -80,7 +76,7 @@ If you clear a user message and submit an empty value, the selected message is e
 
 - Works in interactive TUI mode; non-interactive and RPC modes do not show the picker/editor UI
 - Later messages on the abandoned branch are not deleted from the session file; they remain reachable through `/tree`
-- Assistant rewriting uses a guarded private Pi 0.80.9 `SessionManager` compatibility path because the public extension context is read-only. Incompatible runtimes reject the operation before navigation. A cancellation or failure after append may leave an abandoned attempt in the append-only tree; successful restoration returns to the prior branch, while cancelled restoration leaves the last synchronized manager/live-context position active
+- Assistant rewriting depends on the exact private Pi 0.84 `SessionManager` class because the public extension context is read-only. The extension does not fall back to older method names or signatures, and an unsupported runtime fails closed before navigation. A cancellation or failure after append may leave an abandoned attempt in the append-only tree; successful restoration returns to the prior branch, while cancelled restoration leaves the last synchronized manager/live-context position active
 - If the selected message contains images, the extension warns that re-editing or deleting it will drop the images and keep only text behavior
 - The extension only offers text-bearing user messages by default; `Ctrl+A` also includes text-bearing assistant messages. Image-only or whitespace-only user messages are skipped
 - Queued messages must be cleared before using the command
@@ -111,7 +107,7 @@ Current regression coverage in `tests/edit-session-in-place.test.ts` includes:
 
 - message extraction from mixed session content
 - optional assistant-message inclusion
-- real Pi 0.80.9 assistant edit/delete semantics after direct user prompts and `user → assistant(tool) → toolResult` chains
+- exact Pi 0.84.0 assistant edit/delete semantics through public `createAgentSession()` runtimes after direct user prompts and `user → assistant(tool) → toolResult` chains
 - preservation of custom-message, custom-role, compaction, and metadata parents
 - guarded writable-session incompatibility before navigation, replacement/restoration double cancellation, and failure restoration
 - oldest-to-newest ordering for the picker

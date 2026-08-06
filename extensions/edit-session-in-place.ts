@@ -19,7 +19,9 @@ import {
 	type ExtensionAPI,
 	type ExtensionCommandContext,
 	type KeybindingsManager,
+	SessionManager,
 	type SessionEntry,
+	VERSION,
 	type Theme,
 } from "@earendil-works/pi-coding-agent";
 import {
@@ -582,34 +584,48 @@ const editTextInCustomEditor = async (ctx: ExtensionCommandContext, prefill: str
 
 type DraftState = { value?: string };
 
+const EDITOR_RENDER_STATUS_KEY = "edit-session-in-place:editor-render";
+
+const setEditorTextAndRender = (ctx: ExtensionCommandContext, text: string) => {
+	ctx.ui.setEditorText(text);
+	// Pi 0.84 setEditorText mutates the editor without scheduling a render.
+	ctx.ui.setStatus(EDITOR_RENDER_STATUS_KEY, undefined);
+};
+
 const restoreDraftIfNeeded = (ctx: ExtensionCommandContext, draft: DraftState) => {
 	if (draft.value === undefined) return;
-	ctx.ui.setEditorText(draft.value);
+	setEditorTextAndRender(ctx, draft.value);
 	draft.value = undefined;
 };
 
-type WritableSessionManagerAdapter = {
-	branch(entryId: string): void;
-	resetLeaf(): void;
-	appendMessage(message: unknown): string;
-	appendCustomEntry(customType: string, data?: unknown): string;
-	appendCustomMessageEntry(customType: string, content: unknown, display: boolean, details?: unknown): string;
-};
+type WritablePi084SessionManager = Pick<
+	SessionManager,
+	"branch" | "resetLeaf" | "appendMessage" | "appendCustomEntry" | "appendCustomMessageEntry"
+>;
 
-const WRITABLE_SESSION_METHODS = [
+const PI_084_WRITABLE_SESSION_METHODS: ReadonlyArray<keyof WritablePi084SessionManager> = [
 	"branch",
 	"resetLeaf",
 	"appendMessage",
 	"appendCustomEntry",
 	"appendCustomMessageEntry",
-] as const;
+];
 
-/** Pi 0.80.9 compatibility boundary for assistant rewriting's private mutations. */
-export const getWritableSessionManagerAdapter = (value: unknown): WritableSessionManagerAdapter | undefined => {
-	if (!value || typeof value !== "object") return undefined;
-	const candidate = value as Record<string, unknown>;
-	if (!WRITABLE_SESSION_METHODS.every((method) => typeof candidate[method] === "function")) return undefined;
-	return value as WritableSessionManagerAdapter;
+export const isPi084OrLater = (version: string) => {
+	const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
+	if (!match) return false;
+	const major = Number(match[1]);
+	const minor = Number(match[2]);
+	return major > 0 || (major === 0 && minor >= 84);
+};
+
+/** Fail closed unless Pi supplied the 0.84+ private mutation surface validated by this package. */
+export const getWritablePi084SessionManager = (
+	value: unknown,
+	version = VERSION,
+): WritablePi084SessionManager | undefined => {
+	if (!isPi084OrLater(version) || !(value instanceof SessionManager)) return undefined;
+	return PI_084_WRITABLE_SESSION_METHODS.every((method) => typeof value[method] === "function") ? value : undefined;
 };
 
 export const editAssistantMessage = async (ctx: ExtensionCommandContext, selected: EditableMessage, editedText: string) => {
@@ -618,9 +634,9 @@ export const editAssistantMessage = async (ctx: ExtensionCommandContext, selecte
 		return false;
 	}
 
-	const sessionManager = getWritableSessionManagerAdapter(ctx.sessionManager);
+	const sessionManager = getWritablePi084SessionManager(ctx.sessionManager);
 	if (!sessionManager) {
-		ctx.ui.notify("Assistant editing is unavailable with this Pi session runtime.", "warning");
+		ctx.ui.notify("Assistant editing requires Pi's validated 0.84+ SessionManager runtime.", "warning");
 		return false;
 	}
 
@@ -638,6 +654,8 @@ export const editAssistantMessage = async (ctx: ExtensionCommandContext, selecte
 		return false;
 	}
 
+	const editorTextBeforeNavigation = ctx.ui.getEditorText();
+	const restoreEditor = () => setEditorTextAndRender(ctx, editorTextBeforeNavigation);
 	const restore = async () => {
 		try {
 			return !(await ctx.navigateTree(oldLeafId, { summarize: false })).cancelled;
@@ -650,7 +668,10 @@ export const editAssistantMessage = async (ctx: ExtensionCommandContext, selecte
 
 	try {
 		const parentResult = await ctx.navigateTree(selected.parentId, { summarize: false });
-		if (parentResult.cancelled) return false;
+		if (parentResult.cancelled) {
+			restoreEditor();
+			return false;
+		}
 
 		synchronizedLeafId = ctx.sessionManager.getLeafId();
 		// Pi navigates before editable user/custom messages. Replay only that dropped parent;
@@ -688,7 +709,10 @@ export const editAssistantMessage = async (ctx: ExtensionCommandContext, selecte
 		else sessionManager.resetLeaf();
 		replacementNavigationStarted = true;
 		const result = await ctx.navigateTree(targetId, { summarize: false });
-		if (!result.cancelled) return true;
+		if (!result.cancelled) {
+			restoreEditor();
+			return true;
+		}
 	} catch {
 		if (!replacementNavigationStarted && synchronizedLeafId !== undefined) {
 			if (synchronizedLeafId) sessionManager.branch(synchronizedLeafId);
@@ -696,15 +720,18 @@ export const editAssistantMessage = async (ctx: ExtensionCommandContext, selecte
 		}
 		if (await restore()) {
 			ctx.ui.notify("Assistant editing failed; the prior runtime state was restored.", "warning");
+			restoreEditor();
 			return false;
 		}
 		ctx.ui.notify("Assistant editing failed; Pi kept the last synchronized session position.", "warning");
+		restoreEditor();
 		return false;
 	}
 
 	if (!(await restore())) {
 		ctx.ui.notify("Assistant editing was cancelled; Pi kept the last synchronized session position.", "warning");
 	}
+	restoreEditor();
 	return false;
 };
 
@@ -767,7 +794,7 @@ const handleEditTurn = async (ctx: ExtensionCommandContext, draft: DraftState) =
 			return;
 		}
 
-		draft.value = undefined;
+		restoreDraftIfNeeded(ctx, draft);
 		ctx.ui.notify(isDelete ? "Assistant message deleted." : "Assistant message edited.", "info");
 		return;
 	}

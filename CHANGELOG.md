@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] - 2026-08-06
+
+### Changed
+- raised the minimum supported Pi version to `0.84.0`, aligned the Node.js floor with Pi at `>=22.19.0`, and pinned local Pi development dependencies to exact `0.84.0` releases
+- replaced the older multi-version `SessionManager` method-shape adapter with a fail-closed binding to Pi 0.84's exact runtime class; assistant edits retain no fallback for older private signatures
+- refreshed compatibility documentation for Pi `0.84.0` or later while keeping Pi core packages as optional wildcard peers per the Pi package contract
+
+### Fixed
+- restore the main editor after assistant edits and deletes so Pi 0.84 navigation cannot leak the preceding user prompt into the input box
+- request a Pi 0.84 TUI redraw after restoring editor text so canceled picker/editor flows show the restored input immediately
+
+### Tests
+- pinned the regression harness to Pi `0.84.0` and replaced fabricated private `AgentSession` objects with public `createAgentSession()` runtimes that exercise the exact Pi 0.84 `SessionManager` and `AgentSession.navigateTree` behavior
+
 ## [0.1.27] - 2026-08-03
 
 ### Changed

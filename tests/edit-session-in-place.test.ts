@@ -6,12 +6,21 @@
  * Invariants/Assumptions: Tests target the published extension entrypoint shape and current pi helper behavior.
  */
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import assert from "node:assert/strict";
-import test from "node:test";
+import { after, test } from "node:test";
 
-import { AgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
+import {
+	DefaultResourceLoader,
+	ModelRuntime,
+	SessionManager,
+	SettingsManager,
+	VERSION,
+	createAgentSession,
+} from "@earendil-works/pi-coding-agent";
 import editSessionInPlace, {
 	editAssistantMessage,
 	extractEditableText,
@@ -19,7 +28,8 @@ import editSessionInPlace, {
 	getEditableMessages,
 	getEditTurnCommandText,
 	getExpandedEditorText,
-	getWritableSessionManagerAdapter,
+	getWritablePi084SessionManager,
+	isPi084OrLater,
 	parseExternalEditorCommand,
 	resolveExternalEditorCommand,
 	trimSingleTrailingNewline,
@@ -146,61 +156,133 @@ const assistantMessage = (text: string) => ({
 	timestamp: 1,
 });
 
-const makeRealPiHarness = (cancelNavigation?: (call: number, targetId: string) => boolean) => {
+type TestAgentSession = Awaited<ReturnType<typeof createAgentSession>>["session"];
+
+const testAgentDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-edit-session-tests-"));
+const testSessions = new Set<TestAgentSession>();
+after(() => {
+	for (const session of testSessions) session.dispose();
+	fs.rmSync(testAgentDir, { recursive: true, force: true });
+});
+
+let testModelRuntime: Promise<ModelRuntime> | undefined;
+const getTestModelRuntime = () =>
+	(testModelRuntime ??= ModelRuntime.create({
+		authPath: path.join(testAgentDir, "auth.json"),
+		modelsPath: null,
+	}));
+
+const createTestAgentSession = async (
+	manager: SessionManager,
+	cancelNavigation?: (call: number, targetId: string) => boolean,
+) => {
+	let navigationCalls = 0;
+	const settingsManager = SettingsManager.inMemory();
+	const resourceLoader = new DefaultResourceLoader({
+		cwd: process.cwd(),
+		agentDir: testAgentDir,
+		settingsManager,
+		noExtensions: true,
+		noSkills: true,
+		noPromptTemplates: true,
+		noThemes: true,
+		noContextFiles: true,
+		extensionFactories: [
+			(pi) => {
+				pi.on("session_before_tree", (event) => {
+					navigationCalls += 1;
+					return cancelNavigation?.(navigationCalls, event.preparation.targetId) ? { cancel: true } : undefined;
+				});
+			},
+		],
+	});
+	await resourceLoader.reload();
+	const { session } = await createAgentSession({
+		cwd: process.cwd(),
+		modelRuntime: await getTestModelRuntime(),
+		resourceLoader,
+		sessionManager: manager,
+		settingsManager,
+		noTools: "all",
+	});
+	testSessions.add(session);
+	return { session, getNavigationCalls: () => navigationCalls };
+};
+
+const makePi084CommandContext = (manager: SessionManager, runtime: TestAgentSession) => {
+	let editorText = "";
+	let renderRequests = 0;
+	const ctx = {
+		sessionManager: manager,
+		navigateTree: async (targetId: string, options?: { summarize?: boolean }) => {
+			const result = await runtime.navigateTree(targetId, options);
+			if (!result.cancelled && result.editorText && !editorText.trim()) editorText = result.editorText;
+			return { cancelled: result.cancelled };
+		},
+		ui: {
+			notify() {},
+			getEditorText: () => editorText,
+			setEditorText: (text: string) => {
+				editorText = text;
+			},
+			setStatus() {
+				renderRequests += 1;
+			},
+		},
+	} as any;
+	return { ctx, getEditorText: () => editorText, getRenderRequests: () => renderRequests };
+};
+
+const makeRealPiHarness = async (cancelNavigation?: (call: number, targetId: string) => boolean) => {
 	const manager = SessionManager.inMemory();
 	const promptId = manager.appendMessage({ role: "user", content: [{ type: "text", text: "Keep this prompt" }], timestamp: 1 } as any);
 	const assistantId = manager.appendMessage(assistantMessage("Old response") as any);
 	manager.appendMessage({ role: "user", content: [{ type: "text", text: "Later prompt" }], timestamp: 2 } as any);
-	const oldLeafId = manager.appendMessage(assistantMessage("Later response") as any);
-	let navigationCalls = 0;
-	const runtime = Object.assign(Object.create(AgentSession.prototype), {
-		sessionManager: manager,
-		agent: { state: { messages: manager.buildSessionContext().messages } },
-		_extensionRunner: {
-			hasHandlers: (event: string) => event === "session_before_tree",
-			emit: async (event: any) => {
-				if (event.type !== "session_before_tree") return undefined;
-				navigationCalls += 1;
-				return cancelNavigation?.(navigationCalls, event.preparation.targetId) ? { cancel: true } : undefined;
-			},
-		},
-		_branchSummaryAbortController: undefined,
-	}) as any;
-	const navigateTree = (targetId: string, options?: { summarize?: boolean }) =>
-		AgentSession.prototype.navigateTree.call(runtime, targetId, options);
-	const ctx = { sessionManager: manager, navigateTree, ui: { notify() {} } } as any;
+	manager.appendMessage(assistantMessage("Later response") as any);
+	const { session: runtime, getNavigationCalls } = await createTestAgentSession(manager, cancelNavigation);
+	const oldLeafId = manager.getLeafId();
+	assert.ok(oldLeafId);
+	const { ctx, getEditorText, getRenderRequests } = makePi084CommandContext(manager, runtime);
 	const selected = getEditableMessages(manager.getBranch(), { includeAssistant: true }).find(
 		(message) => message.entryId === assistantId,
 	);
 	assert.ok(selected);
-	return { manager, runtime, ctx, selected, promptId, oldLeafId, getNavigationCalls: () => navigationCalls };
+	return { manager, runtime, ctx, selected, promptId, oldLeafId, getNavigationCalls, getEditorText, getRenderRequests };
 };
 
-const assertRuntimeSynchronized = (manager: SessionManager, runtime: any) => {
-	assert.deepEqual(runtime.agent.state.messages, manager.buildSessionContext().messages);
+const assertRuntimeSynchronized = (manager: SessionManager, runtime: TestAgentSession) => {
+	assert.deepEqual(runtime.state.messages, manager.buildSessionContext().messages);
 };
 
-test("assistant edit follows real Pi 0.80.9 user-target navigation and preserves the prompt", async () => {
-	const { manager, runtime, ctx, selected } = makeRealPiHarness();
+test("tests run against the exact Pi 0.84.0 baseline", () => {
+	assert.equal(VERSION, "0.84.0");
+});
+
+test("assistant edit follows Pi 0.84.0 command-context navigation without leaking the prompt into the editor", async () => {
+	const { manager, runtime, ctx, selected, getEditorText, getRenderRequests } = await makeRealPiHarness();
 	assert.equal(await editAssistantMessage(ctx, selected, "New response"), true);
 
 	const active = manager.getBranch();
 	assert.deepEqual(active.map((entry) => entry.type === "message" ? entry.message.role : entry.type), ["user", "assistant"]);
 	assert.equal((active[0] as any).message.content[0].text, "Keep this prompt");
 	assert.equal((active[1] as any).message.content[0].text, "New response");
+	assert.equal(getEditorText(), "");
+	assert.equal(getRenderRequests(), 1);
 	assertRuntimeSynchronized(manager, runtime);
 });
 
-test("assistant delete follows real Pi 0.80.9 semantics and keeps the prompt in live context", async () => {
-	const { manager, runtime, ctx, selected } = makeRealPiHarness();
+test("assistant delete follows real Pi 0.84.0 semantics and keeps the prompt out of the editor", async () => {
+	const { manager, runtime, ctx, selected, getEditorText, getRenderRequests } = await makeRealPiHarness();
 	assert.equal(await editAssistantMessage(ctx, selected, ""), true);
 
 	assert.deepEqual(manager.getBranch().map((entry) => entry.type === "message" ? entry.message.role : entry.type), ["user", "custom"]);
 	assert.equal((manager.getBranch()[0] as any).message.content[0].text, "Keep this prompt");
+	assert.equal(getEditorText(), "");
+	assert.equal(getRenderRequests(), 1);
 	assertRuntimeSynchronized(manager, runtime);
 });
 
-const makeToolResultHarness = (cancelNavigation?: (call: number, targetId: string) => boolean) => {
+const makeToolResultHarness = async (cancelNavigation?: (call: number, targetId: string) => boolean) => {
 	const manager = SessionManager.inMemory();
 	const promptId = manager.appendMessage({ role: "user", content: [{ type: "text", text: "Use the tool" }], timestamp: 1 } as any);
 	const toolAssistantId = manager.appendMessage({
@@ -218,27 +300,11 @@ const makeToolResultHarness = (cancelNavigation?: (call: number, targetId: strin
 	} as any);
 	const selectedId = manager.appendMessage(assistantMessage("Final response") as any);
 	manager.appendMessage({ role: "user", content: [{ type: "text", text: "Later prompt" }], timestamp: 3 } as any);
-	const oldLeafId = manager.appendMessage(assistantMessage("Later response") as any);
-	let navigationCalls = 0;
-	const runtime = Object.assign(Object.create(AgentSession.prototype), {
-		sessionManager: manager,
-		agent: { state: { messages: manager.buildSessionContext().messages } },
-		_extensionRunner: {
-			hasHandlers: (event: string) => event === "session_before_tree",
-			emit: async (event: any) => {
-				if (event.type !== "session_before_tree") return undefined;
-				navigationCalls += 1;
-				return cancelNavigation?.(navigationCalls, event.preparation.targetId) ? { cancel: true } : undefined;
-			},
-		},
-		_branchSummaryAbortController: undefined,
-	}) as any;
-	const ctx = {
-		sessionManager: manager,
-		navigateTree: (targetId: string, options?: { summarize?: boolean }) =>
-			AgentSession.prototype.navigateTree.call(runtime, targetId, options),
-		ui: { notify() {} },
-	} as any;
+	manager.appendMessage(assistantMessage("Later response") as any);
+	const { session: runtime, getNavigationCalls } = await createTestAgentSession(manager, cancelNavigation);
+	const oldLeafId = manager.getLeafId();
+	assert.ok(oldLeafId);
+	const { ctx, getEditorText, getRenderRequests } = makePi084CommandContext(manager, runtime);
 	const selected = getEditableMessages(manager.getBranch(), { includeAssistant: true }).find(
 		(message) => message.entryId === selectedId,
 	);
@@ -252,13 +318,15 @@ const makeToolResultHarness = (cancelNavigation?: (call: number, targetId: strin
 		toolAssistantId,
 		toolResultId,
 		oldLeafId,
-		getNavigationCalls: () => navigationCalls,
+		getNavigationCalls,
+		getEditorText,
+		getRenderRequests,
 	};
 };
 
 for (const [operation, text] of [["edit", "Rewritten final response"], ["delete", ""]] as const) {
-	test(`assistant ${operation} preserves user→assistant(tool)→toolResult under real Pi 0.80.9 navigation`, async () => {
-		const { manager, runtime, ctx, selected, promptId, toolAssistantId, toolResultId } = makeToolResultHarness();
+	test(`assistant ${operation} preserves user→assistant(tool)→toolResult under real Pi 0.84.0 navigation`, async () => {
+		const { manager, runtime, ctx, selected, promptId, toolAssistantId, toolResultId } = await makeToolResultHarness();
 		assert.equal(await editAssistantMessage(ctx, selected, text), true);
 
 		const active = manager.getBranch();
@@ -284,22 +352,12 @@ for (const parentKind of ["custom-entry", "custom-role", "compaction", "metadata
 		const selectedId = manager.appendMessage(assistantMessage("Final") as any);
 		manager.appendMessage({ role: "user", content: "Later", timestamp: 3 } as any);
 		manager.appendMessage(assistantMessage("Later response") as any);
-		const runtime = Object.assign(Object.create(AgentSession.prototype), {
-			sessionManager: manager,
-			agent: { state: { messages: manager.buildSessionContext().messages } },
-			_extensionRunner: { hasHandlers: () => false, emit: async () => undefined },
-			_branchSummaryAbortController: undefined,
-		}) as any;
+		const { session: runtime } = await createTestAgentSession(manager);
 		const selected = getEditableMessages(manager.getBranch(), { includeAssistant: true }).find(
 			(message) => message.entryId === selectedId,
 		);
 		assert.ok(selected);
-		const ctx = {
-			sessionManager: manager,
-			navigateTree: (targetId: string, options?: { summarize?: boolean }) =>
-				AgentSession.prototype.navigateTree.call(runtime, targetId, options),
-			ui: { notify() {} },
-		} as any;
+		const { ctx } = makePi084CommandContext(manager, runtime);
 
 		assert.equal(await editAssistantMessage(ctx, selected, "Rewritten"), true);
 		assert.deepEqual(manager.getBranch().slice(0, 3).map((entry) => entry.id), [promptId, precursorId, parentId]);
@@ -314,22 +372,12 @@ test("assistant edit replays a custom-message parent dropped by Pi navigation", 
 	const selectedId = manager.appendMessage(assistantMessage("Final") as any);
 	manager.appendMessage({ role: "user", content: "Later", timestamp: 3 } as any);
 	manager.appendMessage(assistantMessage("Later response") as any);
-	const runtime = Object.assign(Object.create(AgentSession.prototype), {
-		sessionManager: manager,
-		agent: { state: { messages: manager.buildSessionContext().messages } },
-		_extensionRunner: { hasHandlers: () => false, emit: async () => undefined },
-		_branchSummaryAbortController: undefined,
-	}) as any;
+	const { session: runtime } = await createTestAgentSession(manager);
 	const selected = getEditableMessages(manager.getBranch(), { includeAssistant: true }).find(
 		(message) => message.entryId === selectedId,
 	);
 	assert.ok(selected);
-	const ctx = {
-		sessionManager: manager,
-		navigateTree: (targetId: string, options?: { summarize?: boolean }) =>
-			AgentSession.prototype.navigateTree.call(runtime, targetId, options),
-		ui: { notify() {} },
-	} as any;
+	const { ctx } = makePi084CommandContext(manager, runtime);
 
 	assert.equal(await editAssistantMessage(ctx, selected, "Rewritten"), true);
 	const active = manager.getBranch();
@@ -340,8 +388,8 @@ test("assistant edit replays a custom-message parent dropped by Pi navigation", 
 	assertRuntimeSynchronized(manager, runtime);
 });
 
-test("incompatible writable adapter is rejected before real Pi navigation or mutation", async () => {
-	const { manager, ctx, selected, oldLeafId, getNavigationCalls } = makeRealPiHarness();
+test("an unsupported SessionManager instance is rejected before real Pi navigation or mutation", async () => {
+	const { manager, ctx, selected, oldLeafId, getNavigationCalls } = await makeRealPiHarness();
 	const entryCount = manager.getEntries().length;
 	ctx.sessionManager = {
 		getEntry: manager.getEntry.bind(manager),
@@ -357,40 +405,45 @@ test("incompatible writable adapter is rejected before real Pi navigation or mut
 });
 
 test("first navigation cancellation leaves real Pi runtime untouched", async () => {
-	const { manager, runtime, ctx, selected, oldLeafId } = makeRealPiHarness((call) => call === 1);
+	const { manager, runtime, ctx, selected, oldLeafId, getEditorText, getRenderRequests } = await makeRealPiHarness((call) => call === 1);
 	const entries = manager.getEntries();
-	const messages = structuredClone(runtime.agent.state.messages);
+	const messages = structuredClone(runtime.state.messages);
 
 	assert.equal(await editAssistantMessage(ctx, selected, "New response"), false);
 	assert.deepEqual(manager.getEntries(), entries);
 	assert.equal(manager.getLeafId(), oldLeafId);
-	assert.deepEqual(runtime.agent.state.messages, messages);
+	assert.deepEqual(runtime.state.messages, messages);
+	assert.equal(getEditorText(), "");
+	assert.equal(getRenderRequests(), 1);
 });
 
 test("second navigation cancellation restores SessionManager leaf and live agent context", async () => {
-	const { manager, runtime, ctx, selected, oldLeafId } = makeRealPiHarness((call) => call === 2);
-	const messages = structuredClone(runtime.agent.state.messages);
+	const { manager, runtime, ctx, selected, oldLeafId, getEditorText, getRenderRequests } = await makeRealPiHarness((call) => call === 2);
+	const messages = structuredClone(runtime.state.messages);
 
 	assert.equal(await editAssistantMessage(ctx, selected, "New response"), false);
 	assert.equal(manager.getLeafId(), oldLeafId);
-	assert.deepEqual(runtime.agent.state.messages, messages);
+	assert.deepEqual(runtime.state.messages, messages);
+	assert.equal(getEditorText(), "");
+	assert.equal(getRenderRequests(), 1);
 	assertRuntimeSynchronized(manager, runtime);
 });
 
 test("replacement and restoration cancellation keep the real Pi manager and live context synchronized", async () => {
-	const { manager, runtime, ctx, selected, toolResultId, getNavigationCalls } = makeToolResultHarness(
-		(call) => call === 2 || call === 3,
-	);
+	const { manager, runtime, ctx, selected, toolResultId, getNavigationCalls, getEditorText, getRenderRequests } =
+		await makeToolResultHarness((call) => call === 2 || call === 3);
 
 	assert.equal(await editAssistantMessage(ctx, selected, "New response"), false);
 	assert.equal(getNavigationCalls(), 3);
 	assert.equal(manager.getLeafId(), toolResultId, "cancelled restoration leaves the last synchronized branch active");
+	assert.equal(getEditorText(), "");
+	assert.equal(getRenderRequests(), 1);
 	assertRuntimeSynchronized(manager, runtime);
 });
 
 test("failure after replacement navigation restores SessionManager leaf and live agent context", async () => {
-	const { manager, runtime, ctx, selected, oldLeafId } = makeRealPiHarness();
-	const messages = structuredClone(runtime.agent.state.messages);
+	const { manager, runtime, ctx, selected, oldLeafId, getEditorText, getRenderRequests } = await makeRealPiHarness();
+	const messages = structuredClone(runtime.state.messages);
 	const navigateTree = ctx.navigateTree;
 	let calls = 0;
 	ctx.navigateTree = async (...args: any[]) => {
@@ -402,21 +455,28 @@ test("failure after replacement navigation restores SessionManager leaf and live
 
 	assert.equal(await editAssistantMessage(ctx, selected, "New response"), false);
 	assert.equal(manager.getLeafId(), oldLeafId);
-	assert.deepEqual(runtime.agent.state.messages, messages);
+	assert.deepEqual(runtime.state.messages, messages);
+	assert.equal(getEditorText(), "");
+	assert.equal(getRenderRequests(), 1);
 	assertRuntimeSynchronized(manager, runtime);
 });
 
-test("writable session adapter accepts only the Pi 0.80.9 mutation methods it uses", () => {
-	const compatible = {
-		branch() {},
-		resetLeaf() {},
-		appendMessage() { return "message"; },
-		appendCustomEntry() { return "custom"; },
-		appendCustomMessageEntry() { return "custom-message"; },
-	};
-	assert.equal(getWritableSessionManagerAdapter(compatible), compatible);
-	assert.equal(getWritableSessionManagerAdapter({ ...compatible, branch: undefined }), undefined);
-	assert.equal(getWritableSessionManagerAdapter(null), undefined);
+test("writable session access requires Pi 0.84+ and its exact SessionManager class", () => {
+	const manager = SessionManager.inMemory();
+	assert.equal(isPi084OrLater("0.83.0"), false);
+	assert.equal(isPi084OrLater("0.84.0"), true);
+	assert.equal(isPi084OrLater("0.85.1"), true);
+	assert.equal(isPi084OrLater("1.0.0"), true);
+	assert.equal(isPi084OrLater("0.84.0-beta.1"), false);
+	assert.equal(isPi084OrLater("0.84.0garbage"), false);
+	assert.equal(isPi084OrLater("invalid"), false);
+	assert.equal(getWritablePi084SessionManager(manager, "0.83.0"), undefined);
+	assert.equal(getWritablePi084SessionManager(manager), manager);
+	const shadow = Object.create(SessionManager.prototype);
+	shadow.appendMessage = undefined;
+	assert.equal(getWritablePi084SessionManager(shadow), undefined);
+	assert.equal(getWritablePi084SessionManager({ appendMessage() {} }), undefined);
+	assert.equal(getWritablePi084SessionManager(null), undefined);
 });
 
 // Run the compiled formatTimestamp under a fixed TZ in a child process. Node pins the
@@ -611,6 +671,7 @@ test("custom editor hotkey wraps existing editors and restores expanded drafts",
 	editor?.handleInput("\x1b[69;6u");
 
 	let restoredDraft: string | undefined;
+	let renderRequests = 0;
 	await commandHandler?.("", {
 		mode: "tui",
 		hasPendingMessages: () => false,
@@ -621,6 +682,9 @@ test("custom editor hotkey wraps existing editors and restores expanded drafts",
 			setEditorText: (text: string) => {
 				restoredDraft = text;
 			},
+			setStatus: () => {
+				renderRequests += 1;
+			},
 		},
 	});
 
@@ -628,6 +692,7 @@ test("custom editor hotkey wraps existing editors and restores expanded drafts",
 	assert.deepEqual(setTextCalls, ["/edit-turn"]);
 	assert.deepEqual(handledInputs, ["\r"]);
 	assert.equal(restoredDraft, "expanded draft");
+	assert.equal(renderRequests, 1, "restoring a draft should request a Pi 0.84 TUI redraw");
 	assert.equal(baseActionHandlers.has("app.interrupt"), true, "app action handlers should be delegated to CustomEditor-like bases");
 });
 
@@ -664,6 +729,7 @@ test("session lifecycle clears hotkey drafts before a replacement session starts
 			},
 			notify() {},
 			setEditorText,
+			setStatus() {},
 		},
 	});
 

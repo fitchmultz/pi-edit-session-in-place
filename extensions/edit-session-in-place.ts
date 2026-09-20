@@ -986,8 +986,35 @@ class EditSessionInPlaceEditor implements EditorComponent, Focusable {
 	}
 }
 
+// 0.84 ignores sendUserMessage's command-expansion option. Keep its editor path;
+// never turn a local editing command into a model prompt on an older runtime.
+export const supportsNativeCommandShortcut = (version: string) => {
+	const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
+	if (!match) return false;
+	const major = Number(match[1]);
+	const minor = Number(match[2]);
+	const patch = Number(match[3]);
+	return major > 0 || (major === 0 && (minor > 85 || (minor === 85 && patch >= 1)));
+};
+
 export default function editSessionInPlace(pi: ExtensionAPI) {
 	const draft: DraftState = {};
+	const nativeShortcut = supportsNativeCommandShortcut(VERSION);
+	if (nativeShortcut) {
+		pi.registerShortcut(HOTKEY, {
+			description: "Select and re-edit a previous user message",
+			handler: (ctx) => {
+				if (ctx.mode !== "tui") return;
+				const commands = pi.getCommands();
+				const command = getEditTurnCommandText(commands);
+				if (!commands.some((item) => item.source === "extension" && `/${item.name}` === command)) return;
+				draft.value = ctx.ui.getEditorText();
+				ctx.ui.setEditorText("");
+				// Native dispatch supplies CommandContext and owns the command promise.
+				pi.sendUserMessage(command, { expandPromptTemplates: true });
+			},
+		});
+	}
 	pi.registerCommand(COMMAND_NAME, {
 		description: `Select and re-edit a previous user message on the current branch (${HOTKEY_LABEL})`,
 		handler: async (_args, ctx) => {
@@ -999,6 +1026,9 @@ export default function editSessionInPlace(pi: ExtensionAPI) {
 		draft.value = undefined;
 		if (ctx.mode === "tui") {
 			const previousEditorFactory = ctx.ui.getEditorComponent();
+			// Leave the stock editor native. Keep composition for custom editors,
+			// which need not implement Pi's registered-shortcut forwarding.
+			if (nativeShortcut && !previousEditorFactory) return;
 			ctx.ui.setEditorComponent((tui, theme, keybindings) => {
 				const baseEditor = previousEditorFactory?.(tui, theme, keybindings) ?? new CustomEditor(tui, theme, keybindings);
 				return new EditSessionInPlaceEditor(baseEditor, () => getEditTurnCommandText(pi.getCommands()), (value) => {

@@ -6,12 +6,12 @@ A [pi](https://github.com/earendil-works/pi-mono) extension that lets you rewind
 
 Requires Pi `0.84.0` or later and Node.js `>=22.19.0`.
 
-Local development and verification pin `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` to exactly `0.84.0`. Pi core packages remain optional wildcard peers because the extension uses Pi's bundled runtime packages rather than installing another copy.
+Local development and verification pin `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` to exactly `0.85.1`. Pi core packages remain optional wildcard peers because the extension uses Pi's bundled runtime packages rather than installing another copy.
 
 ## What it does
 
 - Adds `/edit-turn`
-- Adds a global hotkey: `Ctrl+Shift+E`
+- Adds a main-editor hotkey: `Ctrl+Shift+E`
 - Lets you choose an earlier user message from the current branch
 - Press `Ctrl+A` in the picker to also show assistant messages
 - Rewinds pi to that point in the same session file
@@ -32,11 +32,7 @@ Or install directly from GitHub with pi:
 pi install https://github.com/fitchmultz/pi-edit-session-in-place
 ```
 
-Then reload pi from inside the app with:
-
-```text
-/reload
-```
+Restart Pi after installing or updating the extension to load its code.
 
 ## Usage
 
@@ -76,12 +72,16 @@ If you clear a user message and submit an empty value, the selected message is e
 
 - Works in interactive TUI mode; non-interactive and RPC modes do not show the picker/editor UI
 - Later messages on the abandoned branch are not deleted from the session file; they remain reachable through `/tree`
-- Assistant rewriting depends on the exact private Pi 0.84 `SessionManager` class because the public extension context is read-only. The extension does not fall back to older method names or signatures, and an unsupported runtime fails closed before navigation. A cancellation or failure after append may leave an abandoned attempt in the append-only tree; successful restoration returns to the prior branch, while cancelled restoration leaves the last synchronized manager/live-context position active
+- Assistant rewriting uses Pi's private `SessionManager` mutation methods because the public extension context is read-only. These methods are tested against Pi 0.85.1; an unsupported runtime fails closed before navigation. A cancellation or failure after append may leave an abandoned attempt in the append-only tree; successful restoration returns to the prior branch, while cancelled restoration leaves the last synchronized manager/live-context position active
 - If the selected message contains images, the extension warns that re-editing or deleting it will drop the images and keep only text behavior
 - The extension only offers text-bearing user messages by default; `Ctrl+A` also includes text-bearing assistant messages. Image-only or whitespace-only user messages are skipped
 - Queued messages must be cleared before using the command
-- The `Ctrl+Shift+E` hotkey is handled by this extension's main-editor component so Pi's registered shortcut dispatcher does not consume it first
-- The hotkey component wraps any previously configured custom editor when possible instead of replacing it
+- Repeated hotkeys or `/edit-turn` commands are ignored while an edit operation is running, including while waiting for an interrupted response to settle
+- The hotkey's expanded draft is restored on cancellation or a rejected editing callback; successful user edits/deletes replace it as described above
+- On Pi 0.85.1 or later, `Ctrl+Shift+E` uses Pi's registered shortcut and explicit native extension-command dispatch when the main editor is stock. The extension does not replace the stock editor just for a hotkey
+- On older runtimes, or when another extension already configured a custom editor, the existing hotkey wrapper remains. Arbitrary custom editors need not forward registered shortcuts
+- On checkpoint-capable Pi forks, an idle stock editor needs no shutdown/checkpoint hook from this extension. Temporary drafts return to the native editor before command completion. Genuine drafts, open dialogs, active callbacks, queued input, and custom-editor memory remain subject to native checkpoint guards; other extensions may still prevent sleep
+- Native shortcuts follow Pi's focus and shortcut-conflict rules. A pending asynchronous custom-UI factory can leave the editor focused until it mounts; this is a native Pi limitation shared with the older wrapper path
 
 ## Development
 
@@ -107,7 +107,7 @@ Current regression coverage in `tests/edit-session-in-place.test.ts` includes:
 
 - message extraction from mixed session content
 - optional assistant-message inclusion
-- exact Pi 0.84.0 assistant edit/delete semantics through public `createAgentSession()` runtimes after direct user prompts and `user → assistant(tool) → toolResult` chains
+- exact Pi 0.85.1 assistant edit/delete semantics through public `createAgentSession()` runtimes after direct user prompts and `user → assistant(tool) → toolResult` chains
 - preservation of custom-message, custom-role, compaction, and metadata parents
 - guarded writable-session incompatibility before navigation, replacement/restoration double cancellation, and failure restoration
 - oldest-to-newest ordering for the picker
@@ -117,6 +117,8 @@ Current regression coverage in `tests/edit-session-in-place.test.ts` includes:
 - external editor command parsing with quoting/escaping
 - trimming exactly one trailing newline from external-editor output
 - clearing hotkey drafts across session replacement lifecycle boundaries
+
+`tests/native-shortcut.test.ts` covers dispatch and queued-message guards. `tests/draft-ownership.test.ts` covers callback rejection, repeated hotkeys/commands, and retry after completion on both editor paths.
 
 ## Files
 

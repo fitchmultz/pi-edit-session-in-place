@@ -33,6 +33,7 @@ import editSessionInPlace, {
 	parseExternalEditorCommand,
 	resolveExternalEditorCommand,
 	trimSingleTrailingNewline,
+	supportsNativeCommandShortcut,
 } from "../extensions/edit-session-in-place.js";
 
 const baseTimestamp = "2026-04-07T12:00:00.000Z";
@@ -254,11 +255,20 @@ const assertRuntimeSynchronized = (manager: SessionManager, runtime: TestAgentSe
 	assert.deepEqual(runtime.state.messages, manager.buildSessionContext().messages);
 };
 
-test("tests run against the exact Pi 0.84.0 baseline", () => {
-	assert.equal(VERSION, "0.84.0");
+test("tests run against the exact Pi 0.85.1 API baseline", () => {
+	assert.equal(VERSION, "0.85.1");
 });
 
-test("assistant edit follows Pi 0.84.0 command-context navigation without leaking the prompt into the editor", async () => {
+test("native command shortcuts stay off for older and unqualified prerelease runtimes", () => {
+	for (const version of ["0.84.0", "0.84.1", "0.85.0", "0.85.1-beta.1", "invalid"]) {
+		assert.equal(supportsNativeCommandShortcut(version), false, version);
+	}
+	for (const version of ["0.85.1", "0.86.0", "1.0.0"]) {
+		assert.equal(supportsNativeCommandShortcut(version), true, version);
+	}
+});
+
+test("assistant edit follows Pi 0.85.1 command-context navigation without leaking the prompt into the editor", async () => {
 	const { manager, runtime, ctx, selected, getEditorText, getRenderRequests } = await makeRealPiHarness();
 	assert.equal(await editAssistantMessage(ctx, selected, "New response"), true);
 
@@ -271,7 +281,7 @@ test("assistant edit follows Pi 0.84.0 command-context navigation without leakin
 	assertRuntimeSynchronized(manager, runtime);
 });
 
-test("assistant delete follows real Pi 0.84.0 semantics and keeps the prompt out of the editor", async () => {
+test("assistant delete follows real Pi 0.85.1 semantics and keeps the prompt out of the editor", async () => {
 	const { manager, runtime, ctx, selected, getEditorText, getRenderRequests } = await makeRealPiHarness();
 	assert.equal(await editAssistantMessage(ctx, selected, ""), true);
 
@@ -325,7 +335,7 @@ const makeToolResultHarness = async (cancelNavigation?: (call: number, targetId:
 };
 
 for (const [operation, text] of [["edit", "Rewritten final response"], ["delete", ""]] as const) {
-	test(`assistant ${operation} preserves user→assistant(tool)→toolResult under real Pi 0.84.0 navigation`, async () => {
+	test(`assistant ${operation} preserves user→assistant(tool)→toolResult under real Pi 0.85.1 navigation`, async () => {
 		const { manager, runtime, ctx, selected, promptId, toolAssistantId, toolResultId } = await makeToolResultHarness();
 		assert.equal(await editAssistantMessage(ctx, selected, text), true);
 
@@ -585,7 +595,7 @@ test("getEditTurnCommandText uses the latest suffixed invocation when duplicate 
 	);
 });
 
-test("extension does not register a shortcut handler that can consume the editor hotkey", () => {
+test("stock editor keeps its identity and uses the native shortcut dispatcher", () => {
 	let sessionStartHandler: ((event: unknown, ctx: any) => void) | undefined;
 	let editorFactory: unknown;
 	let registeredShortcut = false;
@@ -612,8 +622,8 @@ test("extension does not register a shortcut handler that can consume the editor
 		},
 	});
 
-	assert.equal(registeredShortcut, false);
-	assert.equal(typeof editorFactory, "function", "TUI sessions should install the custom editor hotkey path");
+	assert.equal(registeredShortcut, true);
+	assert.equal(editorFactory, undefined, "stock editor must not be replaced just for a hotkey");
 });
 
 test("custom editor hotkey wraps existing editors and restores expanded drafts", async () => {
@@ -705,6 +715,7 @@ test("session lifecycle clears hotkey drafts before a replacement session starts
 		registerCommand(_name: string, options: { handler: (args: string, ctx: any) => Promise<void> }) {
 			commandHandler = options.handler;
 		},
+		registerShortcut() {},
 		on(event: string, handler: (event: unknown, ctx: any) => void) {
 			if (event === "session_start") sessionStartHandler = handler;
 		},

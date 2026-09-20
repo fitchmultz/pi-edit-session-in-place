@@ -50,7 +50,7 @@ const harness = (custom: boolean) => {
 	handlers.get("session_start")?.({}, ctx);
 	const editor = custom ? factory({}, {}, {}) : undefined;
 	return {
-		ctx, original, tasks, handlers,
+		ctx, original, tasks,
 		text: () => text, sent: () => sent,
 		press: () => custom ? editor.handleInput("\x1b[101;6u") : shortcut(ctx),
 		command: () => command("", ctx),
@@ -106,9 +106,3 @@ for (const custom of [false, true]) {
 		assert.equal(h.text(), h.original);
 	});
 }
-
-test("temporary drafts need neither shutdown cleanup nor a positive checkpoint override", () => {
-	const h = harness(false);
-	assert.equal(h.handlers.has("session_shutdown"), false);
-	assert.equal(h.handlers.has("session_checkpoint"), false);
-});

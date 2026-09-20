@@ -841,7 +841,7 @@ class EditSessionInPlaceEditor implements EditorComponent, Focusable {
 	constructor(
 		private readonly base: EditorComponent,
 		private readonly getCommandText: () => string,
-		private readonly saveDraft: (draft: string) => void,
+		private readonly saveDraft: (draft: string) => boolean,
 	) {
 		this.customBase = getCustomEditorHooks(base);
 	}
@@ -976,7 +976,7 @@ class EditSessionInPlaceEditor implements EditorComponent, Focusable {
 
 	handleInput(data: string): void {
 		if (matchesKey(data, HOTKEY)) {
-			this.saveDraft(getExpandedEditorText(this.base));
+			if (!this.saveDraft(getExpandedEditorText(this.base))) return;
 			this.base.setText(this.getCommandText());
 			this.base.handleInput("\r");
 			return;
@@ -999,12 +999,13 @@ export const supportsNativeCommandShortcut = (version: string) => {
 
 export default function editSessionInPlace(pi: ExtensionAPI) {
 	const draft: DraftState = {};
+	let editing = false;
 	const nativeShortcut = supportsNativeCommandShortcut(VERSION);
 	if (nativeShortcut) {
 		pi.registerShortcut(HOTKEY, {
 			description: "Select and re-edit a previous user message",
 			handler: (ctx) => {
-				if (ctx.mode !== "tui") return;
+				if (ctx.mode !== "tui" || editing) return;
 				const commands = pi.getCommands();
 				const command = getEditTurnCommandText(commands);
 				if (!commands.some((item) => item.source === "extension" && `/${item.name}` === command)) return;
@@ -1018,7 +1019,19 @@ export default function editSessionInPlace(pi: ExtensionAPI) {
 	pi.registerCommand(COMMAND_NAME, {
 		description: `Select and re-edit a previous user message on the current branch (${HOTKEY_LABEL})`,
 		handler: async (_args, ctx) => {
-			await handleEditTurn(ctx, draft);
+			if (editing) return;
+			editing = true;
+			try {
+				await handleEditTurn(ctx, draft);
+			} finally {
+				// Return temporary hotkey state to the native editor before command
+				// ownership ends, including rejected UI/navigation callbacks.
+				try {
+					restoreDraftIfNeeded(ctx, draft);
+				} finally {
+					editing = false;
+				}
+			}
 		},
 	});
 
@@ -1032,13 +1045,11 @@ export default function editSessionInPlace(pi: ExtensionAPI) {
 			ctx.ui.setEditorComponent((tui, theme, keybindings) => {
 				const baseEditor = previousEditorFactory?.(tui, theme, keybindings) ?? new CustomEditor(tui, theme, keybindings);
 				return new EditSessionInPlaceEditor(baseEditor, () => getEditTurnCommandText(pi.getCommands()), (value) => {
+					if (editing) return false;
 					draft.value = value;
+					return true;
 				});
 			});
 		}
-	});
-
-	pi.on("session_shutdown", async () => {
-		draft.value = undefined;
 	});
 }

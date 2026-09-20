@@ -76,9 +76,11 @@ If you clear a user message and submit an empty value, the selected message is e
 - If the selected message contains images, the extension warns that re-editing or deleting it will drop the images and keep only text behavior
 - The extension only offers text-bearing user messages by default; `Ctrl+A` also includes text-bearing assistant messages. Image-only or whitespace-only user messages are skipped
 - Queued messages must be cleared before using the command
+- Repeated hotkeys or `/edit-turn` commands are ignored while an edit operation is running, including while waiting for an interrupted response to settle
+- The hotkey's expanded draft is restored on cancellation or a rejected editing callback; successful user edits/deletes replace it as described above
 - On Pi 0.85.1 or later, `Ctrl+Shift+E` uses Pi's registered shortcut and explicit native extension-command dispatch when the main editor is stock. The extension does not replace the stock editor just for a hotkey
 - On older runtimes, or when another extension already configured a custom editor, the existing hotkey wrapper remains. Arbitrary custom editors need not forward registered shortcuts
-- The stock-editor path preserves native checkpoint guards; it does not make arbitrary custom-editor memory or shutdown-only extension state resumable
+- On checkpoint-capable Pi forks, an idle stock editor needs no shutdown/checkpoint hook from this extension. Temporary drafts return to the native editor before command completion. Genuine drafts, open dialogs, active callbacks, queued input, and custom-editor memory remain subject to native checkpoint guards; other extensions may still prevent sleep
 - Native shortcuts follow Pi's focus and shortcut-conflict rules. A pending asynchronous custom-UI factory can leave the editor focused until it mounts; this is a native Pi limitation shared with the older wrapper path
 
 ## Development
@@ -115,6 +117,8 @@ Current regression coverage in `tests/edit-session-in-place.test.ts` includes:
 - external editor command parsing with quoting/escaping
 - trimming exactly one trailing newline from external-editor output
 - clearing hotkey drafts across session replacement lifecycle boundaries
+
+`tests/native-shortcut.test.ts` covers dispatch and queued-message guards. `tests/draft-ownership.test.ts` covers callback rejection, repeated hotkeys/commands, and retry after completion on both editor paths.
 
 ## Files
 

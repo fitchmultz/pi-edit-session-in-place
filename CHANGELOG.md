@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- restore the expanded hotkey draft before an edit command finishes when a UI or navigation callback rejects
+- ignore repeated edit hotkeys and commands while an edit operation is running, including interruption cleanup, on both the native shortcut and custom-editor wrapper paths
+- remove the redundant shutdown-only draft reset; idle stock-editor sessions no longer require shutdown for this extension on checkpoint-capable Pi forks, while native draft, dialog, callback, queue, and custom-editor guards remain intact
+
+### Changed
+- use Pi's registered shortcut and explicit extension-command dispatch for the stock editor on Pi `0.85.1+`, retaining the wrapper for older runtimes and pre-existing custom editors
+- pin local Pi development dependencies to `0.85.1`; runtime peers and the Pi `0.84.0` minimum are unchanged
+
 ## [0.2.0] - 2026-08-06
 
 ### Changed

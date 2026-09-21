@@ -255,8 +255,19 @@ const assertRuntimeSynchronized = (manager: SessionManager, runtime: TestAgentSe
 	assert.deepEqual(runtime.state.messages, manager.buildSessionContext().messages);
 };
 
-test("tests run against the exact Pi 0.85.1 API baseline", () => {
-	assert.equal(VERSION, "0.85.1");
+test("tests run against the selected installed Pi version and package root", (t) => {
+	const hostIndex = fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"));
+	const packageDir = fs.realpathSync(path.resolve(path.dirname(hostIndex), ".."));
+	const installed = JSON.parse(fs.readFileSync(path.join(packageDir, "package.json"), "utf8"));
+	const baseline = JSON.parse(fs.readFileSync("package.json", "utf8")).devDependencies["@earendil-works/pi-coding-agent"];
+	assert.equal(VERSION, process.env.PI_COMPAT_EXPECTED_VERSION ?? baseline);
+	assert.equal(installed.version, VERSION);
+	assert.equal(installed.name, "@earendil-works/pi-coding-agent");
+	// Official and fork can share a version. Verify the resolved import as well.
+	assert.equal(packageDir, fs.realpathSync(process.env.PI_COMPAT_EXPECTED_PACKAGE_DIR
+		?? path.resolve("node_modules/@earendil-works/pi-coding-agent")));
+	if (process.env.PI_HOST_INDEX) assert.equal(fs.realpathSync(hostIndex), fs.realpathSync(process.env.PI_HOST_INDEX));
+	t.diagnostic(`Pi ${VERSION} (${process.env.PI_COMPAT_HOST ?? "local"}): ${hostIndex}`);
 });
 
 test("native command shortcuts stay off for older and unqualified prerelease runtimes", () => {
@@ -268,7 +279,7 @@ test("native command shortcuts stay off for older and unqualified prerelease run
 	}
 });
 
-test("assistant edit follows Pi 0.85.1 command-context navigation without leaking the prompt into the editor", async () => {
+test("assistant edit follows selected Pi command-context navigation without leaking the prompt into the editor", async () => {
 	const { manager, runtime, ctx, selected, getEditorText, getRenderRequests } = await makeRealPiHarness();
 	assert.equal(await editAssistantMessage(ctx, selected, "New response"), true);
 
@@ -281,7 +292,7 @@ test("assistant edit follows Pi 0.85.1 command-context navigation without leakin
 	assertRuntimeSynchronized(manager, runtime);
 });
 
-test("assistant delete follows real Pi 0.85.1 semantics and keeps the prompt out of the editor", async () => {
+test("assistant delete follows selected Pi semantics and keeps the prompt out of the editor", async () => {
 	const { manager, runtime, ctx, selected, getEditorText, getRenderRequests } = await makeRealPiHarness();
 	assert.equal(await editAssistantMessage(ctx, selected, ""), true);
 

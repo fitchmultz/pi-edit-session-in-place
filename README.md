@@ -6,7 +6,7 @@ A [pi](https://github.com/earendil-works/pi-mono) extension that lets you rewind
 
 Requires Pi `0.84.0` or later and Node.js `>=22.19.0`.
 
-Local development and verification pin `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` to exactly `0.85.1`. Pi core packages remain optional wildcard peers because the extension uses Pi's bundled runtime packages rather than installing another copy.
+Local development and verification pin `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` to the official `0.86.1` cohort. This is the current qualification baseline; the declared `0.84.0` floor is a separate test target, not evidence that every later release has been tested. Pi core packages remain optional wildcard peers because the extension uses Pi's bundled runtime packages rather than installing another copy.
 
 ## What it does
 
@@ -72,7 +72,7 @@ If you clear a user message and submit an empty value, the selected message is e
 
 - Works in interactive TUI mode; non-interactive and RPC modes do not show the picker/editor UI
 - Later messages on the abandoned branch are not deleted from the session file; they remain reachable through `/tree`
-- Assistant rewriting uses Pi's private `SessionManager` mutation methods because the public extension context is read-only. These methods are tested against Pi 0.85.1; an unsupported runtime fails closed before navigation. A cancellation or failure after append may leave an abandoned attempt in the append-only tree; successful restoration returns to the prior branch, while cancelled restoration leaves the last synchronized manager/live-context position active
+- Assistant rewriting uses Pi's private `SessionManager` mutation methods because the public extension context is read-only. These methods are tested against the selected Pi host (official development baseline 0.86.1); an unsupported runtime fails closed before navigation. A cancellation or failure after append may leave an abandoned attempt in the append-only tree; successful restoration returns to the prior branch, while cancelled restoration leaves the last synchronized manager/live-context position active
 - If the selected message contains images, the extension warns that re-editing or deleting it will drop the images and keep only text behavior
 - The extension only offers text-bearing user messages by default; `Ctrl+A` also includes text-bearing assistant messages. Image-only or whitespace-only user messages are skipped
 - Queued messages must be cleared before using the command
@@ -94,7 +94,7 @@ pi -e ./extensions/edit-session-in-place.ts
 Local verification:
 
 ```bash
-npm run verify
+npm run check:compat # alias for verify
 ```
 
 That runs:
@@ -103,11 +103,13 @@ That runs:
 - `npm run typecheck` — strict TypeScript type-checking
 - `npm pack --dry-run` — publishability check for the npm package contents
 
+Qualification installs the selected host into this checkout's dependency graph. `PI_COMPAT_EXPECTED_VERSION` and `PI_COMPAT_EXPECTED_PACKAGE_DIR` verify both the imported version and resolved package root; `PI_HOST_INDEX`, when supplied, must resolve to the same SDK. With no overrides the test asserts the pinned development baseline and local installed package. A version string alone cannot identify the fork. No production build or `prepare` is required.
+
 Current regression coverage in `tests/edit-session-in-place.test.ts` includes:
 
 - message extraction from mixed session content
 - optional assistant-message inclusion
-- exact Pi 0.85.1 assistant edit/delete semantics through public `createAgentSession()` runtimes after direct user prompts and `user → assistant(tool) → toolResult` chains
+- selected-host assistant edit/delete semantics through public `createAgentSession()` runtimes after direct user prompts and `user → assistant(tool) → toolResult` chains
 - preservation of custom-message, custom-role, compaction, and metadata parents
 - guarded writable-session incompatibility before navigation, replacement/restoration double cancellation, and failure restoration
 - oldest-to-newest ordering for the picker

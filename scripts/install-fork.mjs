@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -38,7 +37,6 @@ try {
 	writeFileSync(manifestPath, original);
 }
 
-const hash = (file) => createHash("sha256").update(readFileSync(file)).digest("hex");
 for (const name of required) {
 	const pkg = packagesByName.get(name);
 	const sourceManifest = JSON.parse(readFileSync(join(pkg.directory, "package.json"), "utf8"));
@@ -52,7 +50,7 @@ for (const name of required) {
 	const entries = ["dist/index.js"];
 	if (pkg.name === "@earendil-works/pi-coding-agent") entries.push("dist/bundle/cli.js");
 	for (const entry of entries) {
-		assert.equal(hash(join(installed, entry)), hash(join(pkg.directory, entry)), `${pkg.name}: ${entry} must match the built fork`);
+		assert.ok(readFileSync(join(installed, entry)).equals(readFileSync(join(pkg.directory, entry))), `${pkg.name}: ${entry} must match the built fork`);
 	}
 	console.log(`Verified fork SDK: ${pkg.name}@${pkg.version}`);
 }

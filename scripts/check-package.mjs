@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DefaultResourceLoader, SettingsManager, VERSION } from "@earendil-works/pi-coding-agent";
@@ -19,8 +19,6 @@ const temporary = mkdtempSync(join(root, ".test-dist/package-"));
 try {
 	const filename = npm(["pack", "--silent", "--offline", "--pack-destination", temporary]).trim();
 	const consumer = join(temporary, "consumer");
-	mkdirSync(consumer);
-	writeFileSync(join(consumer, "package.json"), JSON.stringify({ private: true }));
 	console.log(npm([
 		"install", "--prefix", consumer, "--offline", "--omit=dev",
 		"--no-audit", "--no-fund", "--no-save", "--package-lock=false", join(temporary, filename),

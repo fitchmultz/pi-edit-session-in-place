@@ -6,7 +6,7 @@ A [pi](https://github.com/earendil-works/pi-mono) extension that lets you rewind
 
 Requires Pi `0.84.0` or later and Node.js `>=22.19.0`.
 
-Local development and verification pin `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` to the official `0.86.1` cohort. This is the current qualification baseline; the declared `0.84.0` floor is a separate test target, not evidence that every later release has been tested. Pi core packages remain optional wildcard peers because the extension uses Pi's bundled runtime packages rather than installing another copy.
+Local development pins `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` to the official `0.86.1` cohort. CI tests that version and the maintained [`fitchmultz/pi` fork at `f371064`](https://github.com/fitchmultz/pi/commit/f371064864ef239d66a81ee645a6774dc525be40); the declared `0.84.0` floor is not a CI lane. Pi core packages remain optional wildcard peers because the extension uses Pi's bundled runtime packages rather than installing another copy.
 
 ## What it does
 
@@ -94,16 +94,20 @@ pi -e ./extensions/edit-session-in-place.ts
 Local verification:
 
 ```bash
-npm run check:compat # alias for verify
+npm ci --ignore-scripts --no-audit --no-fund
+npm run check
 ```
 
 That runs:
 
-- `npm test` — compiles the TypeScript test fixtures to `.test-dist/` and runs them with Node's built-in test runner
-- `npm run typecheck` — strict TypeScript type-checking
-- `npm pack --dry-run` — publishability check for the npm package contents
+- `npm test` — strictly compiles the extension and TypeScript tests to `.test-dist/`, then runs Node's built-in test runner, including real `createAgentSession()` navigation tests
+- `npm run check:package` — creates an npm tarball, installs it offline in a temporary project, and uses the selected host's native `DefaultResourceLoader` to verify the installed package loads and registers `/edit-turn`
 
-Qualification installs the selected host into this checkout's dependency graph. `PI_COMPAT_EXPECTED_VERSION` and `PI_COMPAT_EXPECTED_PACKAGE_DIR` verify both the imported version and resolved package root; `PI_HOST_INDEX`, when supplied, must resolve to the same SDK. With no overrides the test asserts the pinned development baseline and local installed package. A version string alone cannot identify the fork. No production build or `prepare` is required.
+`npm run check:compat` remains the tests-only entry point for external compatibility callers. `npm run typecheck` is available separately; the normal check already type-checks the same sources while compiling the tests. `npm run verify` and `prepublishOnly` run the full test and package-load check. These extension checks make no model calls and require no extension production build or `prepare` step.
+
+The required `compatibility / compatibility` check runs on pull requests and pushes to `main` in one Ubuntu/Node 24 job with an eight-minute timeout. It tests the pinned official Pi release, then builds and installs the pinned fork's SDK cohort with npm. Before repeating the tests and package-load check, it verifies that the installed SDK packages match the built fork. CI does not separately test other Node versions or operating systems.
+
+`PI_COMPAT_EXPECTED_VERSION` and `PI_COMPAT_EXPECTED_PACKAGE_DIR` verify both the imported version and resolved package root; `PI_HOST_INDEX`, when supplied, must resolve to the same SDK. With no overrides the test asserts the pinned development baseline and local installed package. A version string alone cannot identify the fork. Run `npm ci --ignore-scripts --no-audit --no-fund` to restore the official dependency graph after a local fork qualification.
 
 Current regression coverage in `tests/edit-session-in-place.test.ts` includes:
 

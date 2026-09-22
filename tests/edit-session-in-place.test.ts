@@ -346,7 +346,7 @@ const makeToolResultHarness = async (cancelNavigation?: (call: number, targetId:
 };
 
 for (const [operation, text] of [["edit", "Rewritten final response"], ["delete", ""]] as const) {
-	test(`assistant ${operation} preserves user→assistant(tool)→toolResult under real Pi 0.85.1 navigation`, async () => {
+	test(`assistant ${operation} preserves user→assistant(tool)→toolResult under selected-host Pi navigation`, async () => {
 		const { manager, runtime, ctx, selected, promptId, toolAssistantId, toolResultId } = await makeToolResultHarness();
 		assert.equal(await editAssistantMessage(ctx, selected, text), true);
 

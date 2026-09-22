@@ -28,8 +28,9 @@
     "test": "npm run build:test && node --test .test-dist/tests/*.test.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "check": "npm run verify",
-    "check:compat": "npm run verify",
-    "verify": "npm test && npm run typecheck && npm pack --dry-run",
+    "check:compat": "npm test",
+    "check:package": "node scripts/check-package.mjs",
+    "verify": "npm test && npm run check:package",
     "prepublishOnly": "npm run verify"
   },
   "files": [

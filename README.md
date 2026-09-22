@@ -6,7 +6,7 @@ A [pi](https://github.com/earendil-works/pi-mono) extension that lets you rewind
 
 Requires Pi `0.84.0` or later and Node.js `>=22.19.0`.
 
-Local development and verification pin `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` to the official `0.86.1` cohort. This is the current qualification baseline; the declared `0.84.0` floor is a separate test target, not evidence that every later release has been tested. Pi core packages remain optional wildcard peers because the extension uses Pi's bundled runtime packages rather than installing another copy.
+Local development and verification pin `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` to the official `0.87.0` cohort. This is the current qualification baseline; the declared `0.84.0` floor is a separate test target, not evidence that every later release has been tested. Pi core packages remain optional wildcard peers because the extension uses Pi's bundled runtime packages rather than installing another copy.
 
 ## What it does
 
@@ -72,7 +72,7 @@ If you clear a user message and submit an empty value, the selected message is e
 
 - Works in interactive TUI mode; non-interactive and RPC modes do not show the picker/editor UI
 - Later messages on the abandoned branch are not deleted from the session file; they remain reachable through `/tree`
-- Assistant rewriting uses Pi's private `SessionManager` mutation methods because the public extension context is read-only. These methods are tested against the selected Pi host (official development baseline 0.86.1); an unsupported runtime fails closed before navigation. A cancellation or failure after append may leave an abandoned attempt in the append-only tree; successful restoration returns to the prior branch, while cancelled restoration leaves the last synchronized manager/live-context position active
+- Assistant rewriting uses Pi's private `SessionManager` mutation methods because the public extension context is read-only. These methods are tested against the selected Pi host (official development baseline 0.87.0); an unsupported runtime fails closed before navigation. A cancellation or failure after append may leave an abandoned attempt in the append-only tree; successful restoration returns to the prior branch, while cancelled restoration leaves the last synchronized manager/live-context position active
 - If the selected message contains images, the extension warns that re-editing or deleting it will drop the images and keep only text behavior
 - The extension only offers text-bearing user messages by default; `Ctrl+A` also includes text-bearing assistant messages. Image-only or whitespace-only user messages are skipped
 - Queued messages must be cleared before using the command

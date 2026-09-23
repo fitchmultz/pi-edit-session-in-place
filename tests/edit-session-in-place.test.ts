@@ -336,6 +336,36 @@ test("deleting a user message persists the new branch before another prompt", as
 	assert.equal(SessionManager.open(manager.getSessionFile()!).getBranch().some((entry) => entry.id === selected.entryId), false);
 });
 
+test("deleting the current leaf user message removes it from the active and saved branches", async () => {
+	const manager = SessionManager.create(process.cwd(), testAgentDir);
+	manager.appendThinkingLevelChange("off");
+	manager.appendMessage({ role: "user", content: "Earlier prompt", timestamp: 1 } as any);
+	manager.appendMessage(assistantMessage("Earlier response") as any);
+	const selectedId = manager.appendMessage({ role: "user", content: "Delete this prompt", timestamp: 2 } as any);
+	const { session: runtime } = await createTestAgentSession(manager);
+	assert.equal(manager.getLeafId(), selectedId);
+
+	let command: ((args: string, ctx: any) => Promise<void>) | undefined;
+	editSessionInPlace({
+		registerCommand(_name: string, options: { handler: typeof command }) { command = options.handler; },
+		registerShortcut() {},
+		on() {},
+		appendEntry(type: string, data: unknown) { manager.appendCustomEntry(type, data); },
+	} as any);
+
+	const { ctx } = makePi084CommandContext(manager, runtime);
+	let editorCalls = 0;
+	ctx.mode = "tui";
+	ctx.isIdle = () => true;
+	ctx.hasPendingMessages = () => false;
+	ctx.ui.custom = async () => ++editorCalls === 1 ? getEditableMessages(manager.getBranch()).at(-1) : "";
+
+	assert.ok(command);
+	await command("", ctx);
+	assert.equal(manager.getBranch().some((entry) => entry.id === selectedId), false);
+	assert.equal(SessionManager.open(manager.getSessionFile()!).getBranch().some((entry) => entry.id === selectedId), false);
+});
+
 const makeToolResultHarness = async (
 	cancelNavigation?: (call: number, targetId: string) => boolean,
 	manager = SessionManager.inMemory(),

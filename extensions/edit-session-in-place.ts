@@ -802,6 +802,8 @@ const handleEditTurn = async (pi: ExtensionAPI, ctx: ExtensionCommandContext, dr
 		return;
 	}
 
+	// Pi skips navigation when the selected user message is already the leaf.
+	if (ctx.sessionManager.getLeafId() === selected.entryId) pi.appendEntry("edit-session-in-place:leaf-rewind");
 	const result = await ctx.navigateTree(selected.entryId, { summarize: false });
 	if (result.cancelled) {
 		restoreDraftIfNeeded(ctx, draft);

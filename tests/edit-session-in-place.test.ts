@@ -237,8 +237,8 @@ const makePi084CommandContext = (manager: SessionManager, runtime: TestAgentSess
 const makeRealPiHarness = async (
 	cancelNavigation?: (call: number, targetId: string) => boolean,
 	stopReason = "stop",
+	manager = SessionManager.inMemory(),
 ) => {
-	const manager = SessionManager.inMemory();
 	const promptId = manager.appendMessage({ role: "user", content: [{ type: "text", text: "Keep this prompt" }], timestamp: 1 } as any);
 	const assistantId = manager.appendMessage({ ...assistantMessage("Old response"), stopReason } as any);
 	manager.appendMessage({ role: "user", content: [{ type: "text", text: "Later prompt" }], timestamp: 2 } as any);
@@ -310,8 +310,10 @@ test("assistant delete follows selected Pi semantics and keeps the prompt out of
 	assertRuntimeSynchronized(manager, runtime);
 });
 
-const makeToolResultHarness = async (cancelNavigation?: (call: number, targetId: string) => boolean) => {
-	const manager = SessionManager.inMemory();
+const makeToolResultHarness = async (
+	cancelNavigation?: (call: number, targetId: string) => boolean,
+	manager = SessionManager.inMemory(),
+) => {
 	const promptId = manager.appendMessage({ role: "user", content: [{ type: "text", text: "Use the tool" }], timestamp: 1 } as any);
 	const toolAssistantId = manager.appendMessage({
 		...assistantMessage(""),
@@ -450,27 +452,44 @@ test("second navigation cancellation restores SessionManager leaf and live agent
 	const messages = structuredClone(runtime.state.messages);
 
 	assert.equal(await editAssistantMessage(ctx, selected, "New response"), false);
-	assert.equal(manager.getLeafId(), oldLeafId);
+	assert.equal(manager.getLeafEntry()?.parentId, oldLeafId);
 	assert.deepEqual(runtime.state.messages, messages);
 	assert.equal(getEditorText(), "");
 	assert.equal(getRenderRequests(), 1);
 	assertRuntimeSynchronized(manager, runtime);
 });
 
+test("cancelled assistant edit preserves the original conversation after reopening a saved session", async () => {
+	const manager = SessionManager.create(process.cwd(), testAgentDir);
+	const { runtime, ctx, selected } = await makeRealPiHarness((call) => call === 2, "stop", manager);
+	const originalMessages = structuredClone(runtime.state.messages);
+	const sessionFile = manager.getSessionFile();
+	assert.ok(sessionFile);
+
+	assert.equal(await editAssistantMessage(ctx, selected, "Cancelled replacement"), false);
+	assert.deepEqual(runtime.state.messages, originalMessages);
+	assertRuntimeSynchronized(manager, runtime);
+	assert.deepEqual(SessionManager.open(sessionFile).buildSessionContext().messages, originalMessages);
+});
+
 test("replacement and restoration cancellation keep the real Pi manager and live context synchronized", async () => {
+	const savedManager = SessionManager.create(process.cwd(), testAgentDir);
 	const { manager, runtime, ctx, selected, toolResultId, getNavigationCalls, getEditorText, getRenderRequests } =
-		await makeToolResultHarness((call) => call === 2 || call === 3);
+		await makeToolResultHarness((call) => call === 2 || call === 3, savedManager);
 
 	assert.equal(await editAssistantMessage(ctx, selected, "New response"), false);
 	assert.equal(getNavigationCalls(), 3);
-	assert.equal(manager.getLeafId(), toolResultId, "cancelled restoration leaves the last synchronized branch active");
+	assert.equal(manager.getLeafEntry()?.parentId, toolResultId, "cancelled restoration leaves the last synchronized branch active");
 	assert.equal(getEditorText(), "");
 	assert.equal(getRenderRequests(), 1);
 	assertRuntimeSynchronized(manager, runtime);
+	assert.deepEqual(SessionManager.open(manager.getSessionFile()!).buildSessionContext().messages, runtime.state.messages);
 });
 
 test("failure after replacement navigation restores SessionManager leaf and live agent context", async () => {
-	const { manager, runtime, ctx, selected, oldLeafId, getEditorText, getRenderRequests } = await makeRealPiHarness();
+	const savedManager = SessionManager.create(process.cwd(), testAgentDir);
+	const { manager, runtime, ctx, selected, oldLeafId, getEditorText, getRenderRequests } =
+		await makeRealPiHarness(undefined, "stop", savedManager);
 	const messages = structuredClone(runtime.state.messages);
 	const navigateTree = ctx.navigateTree;
 	let calls = 0;
@@ -482,11 +501,12 @@ test("failure after replacement navigation restores SessionManager leaf and live
 	};
 
 	assert.equal(await editAssistantMessage(ctx, selected, "New response"), false);
-	assert.equal(manager.getLeafId(), oldLeafId);
+	assert.equal(manager.getLeafEntry()?.parentId, oldLeafId);
 	assert.deepEqual(runtime.state.messages, messages);
 	assert.equal(getEditorText(), "");
 	assert.equal(getRenderRequests(), 1);
 	assertRuntimeSynchronized(manager, runtime);
+	assert.deepEqual(SessionManager.open(manager.getSessionFile()!).buildSessionContext().messages, messages);
 });
 
 test("writable session access requires Pi 0.84+ and its exact SessionManager class", () => {

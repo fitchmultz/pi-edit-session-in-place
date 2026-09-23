@@ -661,6 +661,9 @@ export const editAssistantMessage = async (ctx: ExtensionCommandContext, selecte
 			return !(await ctx.navigateTree(oldLeafId, { summarize: false })).cancelled;
 		} catch {
 			return false;
+		} finally {
+			// Reopening resumes at the last saved entry; navigation only moves the in-memory leaf.
+			sessionManager.appendCustomEntry("edit-session-in-place:assistant-restore");
 		}
 	};
 	let synchronizedLeafId: string | null | undefined;

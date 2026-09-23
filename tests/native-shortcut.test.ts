@@ -35,6 +35,7 @@ for (const pending of [false, true]) {
 		assert.ok(shortcut);
 		assert.ok(command);
 		await shortcut(ctx);
+		await shortcut(ctx);
 		assert.equal(text, "");
 		assert.deepEqual(sent, [{content: "/edit-turn:2", options: {expandPromptTemplates: true}}]);
 		await command("", ctx);

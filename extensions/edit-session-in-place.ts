@@ -1014,7 +1014,7 @@ export default function editSessionInPlace(pi: ExtensionAPI) {
 		pi.registerShortcut(HOTKEY, {
 			description: "Select and re-edit a previous user message",
 			handler: (ctx) => {
-				if (ctx.mode !== "tui" || editing) return;
+				if (ctx.mode !== "tui" || editing || draft.value !== undefined) return;
 				const commands = pi.getCommands();
 				const command = getEditTurnCommandText(commands);
 				if (!commands.some((item) => item.source === "extension" && `/${item.name}` === command)) return;
@@ -1054,7 +1054,7 @@ export default function editSessionInPlace(pi: ExtensionAPI) {
 			ctx.ui.setEditorComponent((tui, theme, keybindings) => {
 				const baseEditor = previousEditorFactory?.(tui, theme, keybindings) ?? new CustomEditor(tui, theme, keybindings);
 				return new EditSessionInPlaceEditor(baseEditor, () => getEditTurnCommandText(pi.getCommands()), (value) => {
-					if (editing) return false;
+					if (editing || draft.value !== undefined) return false;
 					draft.value = value;
 					return true;
 				});

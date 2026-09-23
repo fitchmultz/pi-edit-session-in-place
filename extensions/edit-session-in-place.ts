@@ -699,7 +699,7 @@ export const editAssistantMessage = async (ctx: ExtensionCommandContext, selecte
 							totalTokens: 0,
 							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 						},
-						stopReason: original.message.stopReason,
+						stopReason: "stop",
 						timestamp: original.message.timestamp,
 					});
 

@@ -234,10 +234,13 @@ const makePi084CommandContext = (manager: SessionManager, runtime: TestAgentSess
 	return { ctx, getEditorText: () => editorText, getRenderRequests: () => renderRequests };
 };
 
-const makeRealPiHarness = async (cancelNavigation?: (call: number, targetId: string) => boolean) => {
+const makeRealPiHarness = async (
+	cancelNavigation?: (call: number, targetId: string) => boolean,
+	stopReason = "stop",
+) => {
 	const manager = SessionManager.inMemory();
 	const promptId = manager.appendMessage({ role: "user", content: [{ type: "text", text: "Keep this prompt" }], timestamp: 1 } as any);
-	const assistantId = manager.appendMessage(assistantMessage("Old response") as any);
+	const assistantId = manager.appendMessage({ ...assistantMessage("Old response"), stopReason } as any);
 	manager.appendMessage({ role: "user", content: [{ type: "text", text: "Later prompt" }], timestamp: 2 } as any);
 	manager.appendMessage(assistantMessage("Later response") as any);
 	const { session: runtime, getNavigationCalls } = await createTestAgentSession(manager, cancelNavigation);
@@ -279,18 +282,22 @@ test("native command shortcuts stay off for older and unqualified prerelease run
 	}
 });
 
-test("assistant edit follows selected Pi command-context navigation without leaking the prompt into the editor", async () => {
-	const { manager, runtime, ctx, selected, getEditorText, getRenderRequests } = await makeRealPiHarness();
-	assert.equal(await editAssistantMessage(ctx, selected, "New response"), true);
+for (const stopReason of ["stop", "aborted", "error", "toolUse"]) {
+	test(`assistant edit completes a response with ${stopReason} status without leaking the prompt into the editor`, async () => {
+		const { manager, runtime, ctx, selected, getEditorText, getRenderRequests } = await makeRealPiHarness(undefined, stopReason);
+		assert.equal(await editAssistantMessage(ctx, selected, "New response"), true);
 
-	const active = manager.getBranch();
-	assert.deepEqual(active.map((entry) => entry.type === "message" ? entry.message.role : entry.type), ["user", "assistant"]);
-	assert.equal((active[0] as any).message.content[0].text, "Keep this prompt");
-	assert.equal((active[1] as any).message.content[0].text, "New response");
-	assert.equal(getEditorText(), "");
-	assert.equal(getRenderRequests(), 1);
-	assertRuntimeSynchronized(manager, runtime);
-});
+		const active = manager.getBranch();
+		assert.deepEqual(active.map((entry) => entry.type === "message" ? entry.message.role : entry.type), ["user", "assistant"]);
+		assert.equal((active[0] as any).message.content[0].text, "Keep this prompt");
+		assert.equal((active[1] as any).message.content[0].text, "New response");
+		assert.equal((active[1] as any).message.stopReason, "stop");
+		assert.equal((manager.getEntry(selected.entryId) as any).message.stopReason, stopReason);
+		assert.equal(getEditorText(), "");
+		assert.equal(getRenderRequests(), 1);
+		assertRuntimeSynchronized(manager, runtime);
+	});
+}
 
 test("assistant delete follows selected Pi semantics and keeps the prompt out of the editor", async () => {
 	const { manager, runtime, ctx, selected, getEditorText, getRenderRequests } = await makeRealPiHarness();

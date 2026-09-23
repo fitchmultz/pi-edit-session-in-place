@@ -738,7 +738,7 @@ export const editAssistantMessage = async (ctx: ExtensionCommandContext, selecte
 	return false;
 };
 
-const handleEditTurn = async (ctx: ExtensionCommandContext, draft: DraftState) => {
+const handleEditTurn = async (pi: ExtensionAPI, ctx: ExtensionCommandContext, draft: DraftState) => {
 	if (ctx.mode !== "tui") {
 		if (ctx.hasUI) {
 			ctx.ui.notify("/edit-turn requires interactive TUI mode.", "warning");
@@ -808,6 +808,7 @@ const handleEditTurn = async (ctx: ExtensionCommandContext, draft: DraftState) =
 		return;
 	}
 
+	if (isDelete) pi.appendEntry("edit-session-in-place:user-delete", { deletedEntryId: selected.entryId });
 	draft.value = undefined;
 	ctx.ui.setEditorText(isDelete ? "" : editedText);
 	ctx.ui.notify(
@@ -1025,7 +1026,7 @@ export default function editSessionInPlace(pi: ExtensionAPI) {
 			if (editing) return;
 			editing = true;
 			try {
-				await handleEditTurn(ctx, draft);
+				await handleEditTurn(pi, ctx, draft);
 			} finally {
 				// Return temporary hotkey state to the native editor before command
 				// ownership ends, including rejected UI/navigation callbacks.

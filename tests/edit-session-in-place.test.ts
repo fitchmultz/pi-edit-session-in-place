@@ -310,6 +310,32 @@ test("assistant delete follows selected Pi semantics and keeps the prompt out of
 	assertRuntimeSynchronized(manager, runtime);
 });
 
+test("deleting a user message persists the new branch before another prompt", async () => {
+	const manager = SessionManager.create(process.cwd(), testAgentDir);
+	const { ctx } = await makeRealPiHarness(undefined, "stop", manager);
+	const selected = getEditableMessages(manager.getBranch()).at(-1);
+	assert.ok(selected);
+
+	let command: ((args: string, ctx: any) => Promise<void>) | undefined;
+	editSessionInPlace({
+		registerCommand(_name: string, options: { handler: typeof command }) { command = options.handler; },
+		registerShortcut() {},
+		on() {},
+		appendEntry(type: string, data: unknown) { manager.appendCustomEntry(type, data); },
+	} as any);
+
+	let editorCalls = 0;
+	ctx.mode = "tui";
+	ctx.isIdle = () => true;
+	ctx.hasPendingMessages = () => false;
+	ctx.ui.custom = async () => ++editorCalls === 1 ? selected : "";
+
+	assert.ok(command);
+	await command("", ctx);
+	assert.equal(manager.getBranch().some((entry) => entry.id === selected.entryId), false);
+	assert.equal(SessionManager.open(manager.getSessionFile()!).getBranch().some((entry) => entry.id === selected.entryId), false);
+});
+
 const makeToolResultHarness = async (
 	cancelNavigation?: (call: number, targetId: string) => boolean,
 	manager = SessionManager.inMemory(),

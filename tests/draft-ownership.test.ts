@@ -5,7 +5,7 @@ import editSessionInPlace from "../extensions/edit-session-in-place.js";
 
 // Focused ownership tests. Native TUI/navigation/abort qualification is separate;
 // these doubles deliberately expose each awaited command boundary.
-const harness = (custom: boolean) => {
+const harness = (custom: boolean, deferCommand = false) => {
 	let text = "expanded draft\n".repeat(25);
 	const original = text;
 	let shortcut: Parameters<ExtensionAPI["registerShortcut"]>[1]["handler"];
@@ -14,7 +14,12 @@ const harness = (custom: boolean) => {
 	let factory: any;
 	let sent = 0;
 	const tasks: Promise<void>[] = [];
-	const submit = () => { sent++; tasks.push(command("", ctx)); };
+	const queuedCommands: Array<() => Promise<void>> = [];
+	const submit = () => {
+		sent++;
+		if (deferCommand) queuedCommands.push(() => command("", ctx));
+		else tasks.push(command("", ctx));
+	};
 	const base = {
 		getText: () => text,
 		getExpandedText: () => text,
@@ -55,8 +60,20 @@ const harness = (custom: boolean) => {
 		text: () => text, sent: () => sent,
 		press: () => custom ? editor.handleInput("\x1b[101;6u") : shortcut(ctx),
 		command: () => command("", ctx),
+		dispatchQueued: async () => {
+			for (const run of queuedCommands.splice(0)) await run();
+		},
 	};
 };
+
+test("custom wrapper preserves the draft when hotkeys arrive before the queued command starts", async () => {
+	const h = harness(true, true);
+	h.press();
+	h.press();
+	await h.dispatchQueued();
+	assert.equal(h.text(), h.original);
+	assert.equal(h.sent(), 1);
+});
 
 for (const custom of [false, true]) {
 	const label = custom ? "custom wrapper" : "native shortcut";

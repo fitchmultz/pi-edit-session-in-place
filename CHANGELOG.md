@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
+- preserve unsent drafts when repeated edit hotkeys arrive before command dispatch
 - submit the mouse-highlighted message in the fullscreen picker instead of the previously keyboard-selected message
 - correctly rewind when editing or deleting the current leaf user message
 - keep the new branch active after deleting a user message and reopening the session before the next prompt

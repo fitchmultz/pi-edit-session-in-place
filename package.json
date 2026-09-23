@@ -57,7 +57,7 @@
       "./extensions"
     ]
   },
-  "packageManager": "npm@11.0.0",
+  "packageManager": "npm@11.20.0",
   "peerDependenciesMeta": {
     "@earendil-works/pi-coding-agent": {
       "optional": true

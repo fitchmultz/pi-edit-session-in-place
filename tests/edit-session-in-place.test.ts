@@ -20,7 +20,9 @@ import {
 	SettingsManager,
 	VERSION,
 	createAgentSession,
+	initTheme,
 } from "@earendil-works/pi-coding-agent";
+import { getKeybindings } from "@earendil-works/pi-tui";
 import editSessionInPlace, {
 	editAssistantMessage,
 	extractEditableText,
@@ -137,6 +139,52 @@ test("getEditableMessages can include assistant text when requested", () => {
 		messages.map((message) => [message.entryId, message.role]),
 		[["u1", "user"], ["a1", "assistant"], ["u4", "user"], ["u5", "user"]],
 	);
+});
+
+test("the picker submits the row highlighted by a mouse click", async () => {
+	initTheme("dark");
+	let command: ((args: string, ctx: any) => Promise<void>) | undefined;
+	editSessionInPlace({
+		registerShortcut() {},
+		registerCommand(_name: string, options: { handler: typeof command }) { command = options.handler; },
+		on() {},
+	} as any);
+
+	let selected: ReturnType<typeof getEditableMessages>[number] | undefined;
+	let dialogCount = 0;
+	const ctx = {
+		mode: "tui",
+		isIdle: () => true,
+		hasPendingMessages: () => false,
+		sessionManager: { getBranch: () => branch },
+		ui: {
+			async custom(factory: any) {
+				if (++dialogCount > 1) return undefined;
+				let chosen: typeof selected;
+				const picker = factory(
+					{ requestRender() {} },
+					{ fg: (_color: string, text: string) => text },
+					getKeybindings(),
+					(value: typeof selected) => { chosen = value; },
+				);
+				const rows: string[] = picker.render(100);
+				const y = rows.findIndex((row) => row.includes("First prompt"));
+				assert.ok(y >= 0);
+				const mouse = { button: "left", x: 3, y, width: 100, height: rows.length };
+				picker.handleMouse({ ...mouse, type: "press" });
+				picker.handleMouse({ ...mouse, type: "click" });
+				assert.ok(picker.render(100)[y].startsWith("→ "), "the clicked row is highlighted");
+				picker.handleInput("\r");
+				selected = chosen;
+				return selected;
+			},
+			notify() {},
+		},
+	};
+
+	assert.ok(command);
+	await command("", ctx);
+	assert.equal(selected?.entryId, "u1");
 });
 
 const assistantMessage = (text: string) => ({

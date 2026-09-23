@@ -356,6 +356,9 @@ class EditableMessageSelector extends Container {
 			this.selectTheme,
 			{ minPrimaryColumnWidth: 56, maxPrimaryColumnWidth: 120 },
 		);
+		selectList.onSelectionChange = (item) => {
+			this.selectedIndex = this.messages.findIndex((message) => message.entryId === item.value);
+		};
 		selectList.setSelectedIndex(this.selectedIndex);
 		return selectList;
 	}

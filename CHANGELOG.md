@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
+- preserve the restored conversation after reopening a session when an assistant edit is cancelled or fails
 - mark edited assistant replies as completed so corrections to interrupted or failed replies remain in model context
 - restore the expanded hotkey draft before an edit command finishes when a UI or navigation callback rejects
 - ignore repeated edit hotkeys and commands while an edit operation is running, including interruption cleanup, on both the native shortcut and custom-editor wrapper paths

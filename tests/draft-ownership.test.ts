@@ -27,7 +27,7 @@ const harness = (custom: boolean) => {
 		hasPendingMessages: () => false,
 		isIdle: () => true,
 		abort() {}, waitForIdle: async () => {},
-		sessionManager: { getBranch: () => [{
+		sessionManager: { getLeafId: () => "user", getBranch: () => [{
 			type: "message", id: "user", parentId: null, timestamp: "2026-01-01T00:00:00Z",
 			message: { role: "user", content: "prior prompt" },
 		}] },
@@ -46,6 +46,7 @@ const harness = (custom: boolean) => {
 		on(event: string, handler: any) { handlers.set(event, handler); },
 		getCommands: () => [{name: "edit-turn", source: "extension"}],
 		sendUserMessage: submit,
+		appendEntry() {},
 	} as unknown as ExtensionAPI);
 	handlers.get("session_start")?.({}, ctx);
 	const editor = custom ? factory({}, {}, {}) : undefined;

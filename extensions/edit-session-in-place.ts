@@ -11,17 +11,14 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import {
-	CustomEditor,
 	DynamicBorder,
 	keyHint,
 	rawKeyHint,
-	type AppKeybinding,
 	type ExtensionAPI,
 	type ExtensionCommandContext,
 	type KeybindingsManager,
 	SessionManager,
 	type SessionEntry,
-	VERSION,
 	type Theme,
 } from "@earendil-works/pi-coding-agent";
 import {
@@ -31,7 +28,6 @@ import {
 	SelectList,
 	Spacer,
 	Text,
-	isFocusable,
 	matchesKey,
 	type EditorComponent,
 	type EditorTheme,
@@ -40,7 +36,6 @@ import {
 } from "@earendil-works/pi-tui";
 
 const HOTKEY = Key.ctrlShift("e");
-const HOTKEY_LABEL = "Ctrl+Shift+E";
 const CLEAR_ALL_KEY = "ctrl+x";
 const TOGGLE_ASSISTANT_KEY = "ctrl+a";
 const COMMAND_NAME = "edit-turn";
@@ -591,7 +586,7 @@ const EDITOR_RENDER_STATUS_KEY = "edit-session-in-place:editor-render";
 
 const setEditorTextAndRender = (ctx: ExtensionCommandContext, text: string) => {
 	ctx.ui.setEditorText(text);
-	// Pi 0.84 setEditorText mutates the editor without scheduling a render.
+	// setEditorText mutates the editor without scheduling a render; setStatus does.
 	ctx.ui.setStatus(EDITOR_RENDER_STATUS_KEY, undefined);
 };
 
@@ -601,12 +596,12 @@ const restoreDraftIfNeeded = (ctx: ExtensionCommandContext, draft: DraftState) =
 	draft.value = undefined;
 };
 
-type WritablePi084SessionManager = Pick<
+type WritableSessionManager = Pick<
 	SessionManager,
 	"branch" | "resetLeaf" | "appendMessage" | "appendCustomEntry" | "appendCustomMessageEntry"
 >;
 
-const PI_084_WRITABLE_SESSION_METHODS: ReadonlyArray<keyof WritablePi084SessionManager> = [
+const WRITABLE_SESSION_METHODS: ReadonlyArray<keyof WritableSessionManager> = [
 	"branch",
 	"resetLeaf",
 	"appendMessage",
@@ -614,21 +609,10 @@ const PI_084_WRITABLE_SESSION_METHODS: ReadonlyArray<keyof WritablePi084SessionM
 	"appendCustomMessageEntry",
 ];
 
-export const isPi084OrLater = (version: string) => {
-	const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
-	if (!match) return false;
-	const major = Number(match[1]);
-	const minor = Number(match[2]);
-	return major > 0 || (major === 0 && minor >= 84);
-};
-
-/** Fail closed unless Pi supplied the 0.84+ private mutation surface validated by this package. */
-export const getWritablePi084SessionManager = (
-	value: unknown,
-	version = VERSION,
-): WritablePi084SessionManager | undefined => {
-	if (!isPi084OrLater(version) || !(value instanceof SessionManager)) return undefined;
-	return PI_084_WRITABLE_SESSION_METHODS.every((method) => typeof value[method] === "function") ? value : undefined;
+/** The public context is read-only. Fail closed unless Pi supplied the private mutation surface this package tests. */
+export const getWritableSessionManager = (value: unknown): WritableSessionManager | undefined => {
+	if (!(value instanceof SessionManager)) return undefined;
+	return WRITABLE_SESSION_METHODS.every((method) => typeof value[method] === "function") ? value : undefined;
 };
 
 export const editAssistantMessage = async (ctx: ExtensionCommandContext, selected: EditableMessage, editedText: string) => {
@@ -637,9 +621,9 @@ export const editAssistantMessage = async (ctx: ExtensionCommandContext, selecte
 		return false;
 	}
 
-	const sessionManager = getWritablePi084SessionManager(ctx.sessionManager);
+	const sessionManager = getWritableSessionManager(ctx.sessionManager);
 	if (!sessionManager) {
-		ctx.ui.notify("Assistant editing requires Pi's validated 0.84+ SessionManager runtime.", "warning");
+		ctx.ui.notify("Assistant editing is unavailable: this Pi runtime does not expose a writable SessionManager.", "warning");
 		return false;
 	}
 
@@ -831,210 +815,32 @@ export const getEditTurnCommandText = (commands: Array<{ name: string }>) => {
 	return `/${candidates.at(-1) ?? COMMAND_NAME}`;
 };
 
-type CustomEditorHooks = {
-	actionHandlers: Map<AppKeybinding, () => void>;
-	onEscape?: () => void;
-	onCtrlD?: () => void;
-	onPasteImage?: () => void;
-	onExtensionShortcut?: (data: string) => boolean | undefined;
-};
-
-const getCustomEditorHooks = (editor: EditorComponent): (EditorComponent & CustomEditorHooks) | undefined => {
-	const candidate = editor as Partial<CustomEditorHooks>;
-	return candidate.actionHandlers instanceof Map ? (editor as EditorComponent & CustomEditorHooks) : undefined;
-};
-
-class EditSessionInPlaceEditor implements EditorComponent, Focusable {
-	private readonly customBase: (EditorComponent & CustomEditorHooks) | undefined;
-
-	constructor(
-		private readonly base: EditorComponent,
-		private readonly getCommandText: () => string,
-		private readonly saveDraft: (draft: string) => boolean,
-	) {
-		this.customBase = getCustomEditorHooks(base);
-	}
-
-	get actionHandlers(): Map<AppKeybinding, () => void> | undefined {
-		return this.customBase?.actionHandlers;
-	}
-
-	get focused(): boolean {
-		return isFocusable(this.base) ? this.base.focused : false;
-	}
-
-	set focused(value: boolean) {
-		if (isFocusable(this.base)) {
-			this.base.focused = value;
-		}
-	}
-
-	get wantsKeyRelease(): boolean | undefined {
-		return this.base.wantsKeyRelease;
-	}
-
-	get onSubmit(): ((text: string) => void) | undefined {
-		return this.base.onSubmit;
-	}
-
-	set onSubmit(handler: ((text: string) => void) | undefined) {
-		this.base.onSubmit = handler;
-	}
-
-	get onChange(): ((text: string) => void) | undefined {
-		return this.base.onChange;
-	}
-
-	set onChange(handler: ((text: string) => void) | undefined) {
-		this.base.onChange = handler;
-	}
-
-	get borderColor(): ((str: string) => string) | undefined {
-		return this.base.borderColor;
-	}
-
-	set borderColor(handler: ((str: string) => string) | undefined) {
-		if (this.base.borderColor !== undefined) {
-			this.base.borderColor = handler;
-		}
-	}
-
-	get onEscape(): (() => void) | undefined {
-		return this.customBase?.onEscape;
-	}
-
-	set onEscape(handler: (() => void) | undefined) {
-		if (this.customBase) {
-			this.customBase.onEscape = handler;
-		}
-	}
-
-	get onCtrlD(): (() => void) | undefined {
-		return this.customBase?.onCtrlD;
-	}
-
-	set onCtrlD(handler: (() => void) | undefined) {
-		if (this.customBase) {
-			this.customBase.onCtrlD = handler;
-		}
-	}
-
-	get onPasteImage(): (() => void) | undefined {
-		return this.customBase?.onPasteImage;
-	}
-
-	set onPasteImage(handler: (() => void) | undefined) {
-		if (this.customBase) {
-			this.customBase.onPasteImage = handler;
-		}
-	}
-
-	get onExtensionShortcut(): ((data: string) => boolean | undefined) | undefined {
-		return this.customBase?.onExtensionShortcut;
-	}
-
-	set onExtensionShortcut(handler: ((data: string) => boolean | undefined) | undefined) {
-		if (this.customBase) {
-			this.customBase.onExtensionShortcut = handler;
-		}
-	}
-
-	onAction(action: AppKeybinding, handler: () => void): void {
-		this.customBase?.actionHandlers.set(action, handler);
-	}
-
-	render(width: number): string[] {
-		return this.base.render(width);
-	}
-
-	invalidate(): void {
-		this.base.invalidate();
-	}
-
-	getText(): string {
-		return this.base.getText();
-	}
-
-	getExpandedText(): string {
-		return getExpandedEditorText(this.base);
-	}
-
-	setText(text: string): void {
-		this.base.setText(text);
-	}
-
-	addToHistory(text: string): void {
-		this.base.addToHistory?.(text);
-	}
-
-	insertTextAtCursor(text: string): void {
-		this.base.insertTextAtCursor?.(text);
-	}
-
-	setAutocompleteProvider(provider: Parameters<NonNullable<EditorComponent["setAutocompleteProvider"]>>[0]): void {
-		this.base.setAutocompleteProvider?.(provider);
-	}
-
-	setPaddingX(padding: number): void {
-		this.base.setPaddingX?.(padding);
-	}
-
-	setAutocompleteMaxVisible(maxVisible: number): void {
-		this.base.setAutocompleteMaxVisible?.(maxVisible);
-	}
-
-	handleInput(data: string): void {
-		if (matchesKey(data, HOTKEY)) {
-			if (!this.saveDraft(getExpandedEditorText(this.base))) return;
-			this.base.setText(this.getCommandText());
-			this.base.handleInput("\r");
-			return;
-		}
-
-		this.base.handleInput(data);
-	}
-}
-
-// 0.84 ignores sendUserMessage's command-expansion option. Keep its editor path;
-// never turn a local editing command into a model prompt on an older runtime.
-export const supportsNativeCommandShortcut = (version: string) => {
-	const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
-	if (!match) return false;
-	const major = Number(match[1]);
-	const minor = Number(match[2]);
-	const patch = Number(match[3]);
-	return major > 0 || (major === 0 && (minor > 85 || (minor === 85 && patch >= 1)));
-};
-
 export default function editSessionInPlace(pi: ExtensionAPI) {
 	const draft: DraftState = {};
 	let editing = false;
-	const nativeShortcut = supportsNativeCommandShortcut(VERSION);
-	if (nativeShortcut) {
-		pi.registerShortcut(HOTKEY, {
-			description: "Select and re-edit a previous user message",
-			handler: (ctx) => {
-				if (ctx.mode !== "tui" || editing || draft.value !== undefined) return;
-				const commands = pi.getCommands();
-				const command = getEditTurnCommandText(commands);
-				if (!commands.some((item) => item.source === "extension" && `/${item.name}` === command)) return;
-				draft.value = ctx.ui.getEditorText();
-				ctx.ui.setEditorText("");
-				// Native dispatch supplies CommandContext and owns the command promise.
-				pi.sendUserMessage(command, { expandPromptTemplates: true });
-			},
-		});
-	}
+	pi.registerShortcut(HOTKEY, {
+		description: "Select and re-edit a previous user message",
+		handler: (ctx) => {
+			if (ctx.mode !== "tui" || editing || draft.value !== undefined) return;
+			const commands = pi.getCommands();
+			const command = getEditTurnCommandText(commands);
+			if (!commands.some((item) => item.source === "extension" && `/${item.name}` === command)) return;
+			draft.value = ctx.ui.getEditorText();
+			ctx.ui.setEditorText("");
+			// Native dispatch supplies CommandContext and owns the command promise.
+			pi.sendUserMessage(command, { expandPromptTemplates: true });
+		},
+	});
 	pi.registerCommand(COMMAND_NAME, {
-		description: `Select and re-edit a previous user message on the current branch (${HOTKEY_LABEL})`,
+		description: "Select and re-edit a previous user message on the current branch (Ctrl+Shift+E)",
 		handler: async (_args, ctx) => {
 			if (editing) return;
 			editing = true;
 			try {
 				await handleEditTurn(pi, ctx, draft);
 			} finally {
-				// Return temporary hotkey state to the native editor before command
-				// ownership ends, including rejected UI/navigation callbacks.
+				// Return the hotkey draft to the editor before command ownership ends,
+				// including rejected UI/navigation callbacks.
 				try {
 					restoreDraftIfNeeded(ctx, draft);
 				} finally {
@@ -1044,21 +850,7 @@ export default function editSessionInPlace(pi: ExtensionAPI) {
 		},
 	});
 
-	pi.on("session_start", (_event, ctx) => {
+	pi.on("session_start", () => {
 		draft.value = undefined;
-		if (ctx.mode === "tui") {
-			const previousEditorFactory = ctx.ui.getEditorComponent();
-			// Leave the stock editor native. Keep composition for custom editors,
-			// which need not implement Pi's registered-shortcut forwarding.
-			if (nativeShortcut && !previousEditorFactory) return;
-			ctx.ui.setEditorComponent((tui, theme, keybindings) => {
-				const baseEditor = previousEditorFactory?.(tui, theme, keybindings) ?? new CustomEditor(tui, theme, keybindings);
-				return new EditSessionInPlaceEditor(baseEditor, () => getEditTurnCommandText(pi.getCommands()), (value) => {
-					if (editing || draft.value !== undefined) return false;
-					draft.value = value;
-					return true;
-				});
-			});
-		}
 	});
 }

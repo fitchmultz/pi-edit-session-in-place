@@ -2,14 +2,14 @@
  * Purpose: Regression coverage for editable-message extraction and external-editor helper behavior.
  * Responsibilities: Verify ordering/filtering, image warnings, command parsing, env resolution, and editor output trimming.
  * Scope: Pure helper and low-level behavior tests only; no interactive TUI integration.
- * Usage: Run via `npm test` after compiling test fixtures to `.test-dist`.
+ * Usage: Run via `npm test` (Node type stripping; no build step).
  * Invariants/Assumptions: Tests target the published extension entrypoint shape and current pi helper behavior.
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 
@@ -30,13 +30,11 @@ import editSessionInPlace, {
 	getEditableMessages,
 	getEditTurnCommandText,
 	getExpandedEditorText,
-	getWritablePi084SessionManager,
-	isPi084OrLater,
+	getWritableSessionManager,
 	parseExternalEditorCommand,
 	resolveExternalEditorCommand,
 	trimSingleTrailingNewline,
-	supportsNativeCommandShortcut,
-} from "../extensions/edit-session-in-place.js";
+} from "../extensions/edit-session-in-place.ts";
 
 const baseTimestamp = "2026-04-07T12:00:00.000Z";
 
@@ -258,7 +256,7 @@ const createTestAgentSession = async (
 	return { session, getNavigationCalls: () => navigationCalls };
 };
 
-const makePi084CommandContext = (manager: SessionManager, runtime: TestAgentSession) => {
+const makeCommandContext = (manager: SessionManager, runtime: TestAgentSession) => {
 	let editorText = "";
 	let renderRequests = 0;
 	const ctx = {
@@ -294,7 +292,7 @@ const makeRealPiHarness = async (
 	const { session: runtime, getNavigationCalls } = await createTestAgentSession(manager, cancelNavigation);
 	const oldLeafId = manager.getLeafId();
 	assert.ok(oldLeafId);
-	const { ctx, getEditorText, getRenderRequests } = makePi084CommandContext(manager, runtime);
+	const { ctx, getEditorText, getRenderRequests } = makeCommandContext(manager, runtime);
 	const selected = getEditableMessages(manager.getBranch(), { includeAssistant: true }).find(
 		(message) => message.entryId === assistantId,
 	);
@@ -319,15 +317,6 @@ test("tests run against the selected installed Pi version and package root", (t)
 		?? path.resolve("node_modules/@earendil-works/pi-coding-agent")));
 	if (process.env.PI_HOST_INDEX) assert.equal(fs.realpathSync(hostIndex), fs.realpathSync(process.env.PI_HOST_INDEX));
 	t.diagnostic(`Pi ${VERSION} (${process.env.PI_COMPAT_HOST ?? "local"}): ${hostIndex}`);
-});
-
-test("native command shortcuts stay off for older and unqualified prerelease runtimes", () => {
-	for (const version of ["0.84.0", "0.84.1", "0.85.0", "0.85.1-beta.1", "invalid"]) {
-		assert.equal(supportsNativeCommandShortcut(version), false, version);
-	}
-	for (const version of ["0.85.1", "0.86.0", "1.0.0"]) {
-		assert.equal(supportsNativeCommandShortcut(version), true, version);
-	}
 });
 
 for (const stopReason of ["stop", "aborted", "error", "toolUse"]) {
@@ -401,7 +390,7 @@ test("deleting the current leaf user message removes it from the active and save
 		appendEntry(type: string, data: unknown) { manager.appendCustomEntry(type, data); },
 	} as any);
 
-	const { ctx } = makePi084CommandContext(manager, runtime);
+	const { ctx } = makeCommandContext(manager, runtime);
 	let editorCalls = 0;
 	ctx.mode = "tui";
 	ctx.isIdle = () => true;
@@ -438,7 +427,7 @@ const makeToolResultHarness = async (
 	const { session: runtime, getNavigationCalls } = await createTestAgentSession(manager, cancelNavigation);
 	const oldLeafId = manager.getLeafId();
 	assert.ok(oldLeafId);
-	const { ctx, getEditorText, getRenderRequests } = makePi084CommandContext(manager, runtime);
+	const { ctx, getEditorText, getRenderRequests } = makeCommandContext(manager, runtime);
 	const selected = getEditableMessages(manager.getBranch(), { includeAssistant: true }).find(
 		(message) => message.entryId === selectedId,
 	);
@@ -491,7 +480,7 @@ for (const parentKind of ["custom-entry", "custom-role", "compaction", "metadata
 			(message) => message.entryId === selectedId,
 		);
 		assert.ok(selected);
-		const { ctx } = makePi084CommandContext(manager, runtime);
+		const { ctx } = makeCommandContext(manager, runtime);
 
 		assert.equal(await editAssistantMessage(ctx, selected, "Rewritten"), true);
 		assert.deepEqual(manager.getBranch().slice(0, 3).map((entry) => entry.id), [promptId, precursorId, parentId]);
@@ -511,7 +500,7 @@ test("assistant edit replays a custom-message parent dropped by Pi navigation", 
 		(message) => message.entryId === selectedId,
 	);
 	assert.ok(selected);
-	const { ctx } = makePi084CommandContext(manager, runtime);
+	const { ctx } = makeCommandContext(manager, runtime);
 
 	assert.equal(await editAssistantMessage(ctx, selected, "Rewritten"), true);
 	const active = manager.getBranch();
@@ -613,35 +602,22 @@ test("failure after replacement navigation restores SessionManager leaf and live
 	assert.deepEqual(SessionManager.open(manager.getSessionFile()!).buildSessionContext().messages, messages);
 });
 
-test("writable session access requires Pi 0.84+ and its exact SessionManager class", () => {
+test("writable session access requires the host's SessionManager class and mutation methods", () => {
 	const manager = SessionManager.inMemory();
-	assert.equal(isPi084OrLater("0.83.0"), false);
-	assert.equal(isPi084OrLater("0.84.0"), true);
-	assert.equal(isPi084OrLater("0.85.1"), true);
-	assert.equal(isPi084OrLater("1.0.0"), true);
-	assert.equal(isPi084OrLater("0.84.0-beta.1"), false);
-	assert.equal(isPi084OrLater("0.84.0garbage"), false);
-	assert.equal(isPi084OrLater("invalid"), false);
-	assert.equal(getWritablePi084SessionManager(manager, "0.83.0"), undefined);
-	assert.equal(getWritablePi084SessionManager(manager), manager);
+	assert.equal(getWritableSessionManager(manager), manager);
 	const shadow = Object.create(SessionManager.prototype);
 	shadow.appendMessage = undefined;
-	assert.equal(getWritablePi084SessionManager(shadow), undefined);
-	assert.equal(getWritablePi084SessionManager({ appendMessage() {} }), undefined);
-	assert.equal(getWritablePi084SessionManager(null), undefined);
+	assert.equal(getWritableSessionManager(shadow), undefined);
+	assert.equal(getWritableSessionManager({ appendMessage() {} }), undefined);
+	assert.equal(getWritableSessionManager(null), undefined);
 });
 
-// Run the compiled formatTimestamp under a fixed TZ in a child process. Node pins the
-// timezone at startup from the environment, so a subprocess is the reliable way to assert
-// concrete local-time output regardless of the contributor's machine timezone.
-const compiledExtensionPath = path.join(
-	path.dirname(fileURLToPath(import.meta.url)),
-	"../extensions/edit-session-in-place.js",
-);
+// Run formatTimestamp under a fixed TZ in a child process. Node pins the timezone at
+// startup from the environment, so a subprocess is the reliable way to assert concrete
+// local-time output regardless of the contributor's machine timezone.
+const extensionUrl = new URL("../extensions/edit-session-in-place.ts", import.meta.url).href;
 const formatTimestampAtTz = (tz: string, ...inputs: string[]) => {
-	const script = `import { formatTimestamp } from ${JSON.stringify(
-		pathToFileURL(compiledExtensionPath).href,
-	)}; process.stdout.write(JSON.stringify(${JSON.stringify(inputs)}.map(formatTimestamp)));`;
+	const script = `import { formatTimestamp } from ${JSON.stringify(extensionUrl)}; process.stdout.write(JSON.stringify(${JSON.stringify(inputs)}.map(formatTimestamp)));`;
 	const result = spawnSync(process.execPath, ["--input-type=module", "-e", script], {
 		env: { ...process.env, TZ: tz },
 		encoding: "utf-8",
@@ -737,168 +713,46 @@ test("getEditTurnCommandText uses the latest suffixed invocation when duplicate 
 	);
 });
 
-test("stock editor keeps its identity and uses the native shortcut dispatcher", () => {
-	let sessionStartHandler: ((event: unknown, ctx: any) => void) | undefined;
-	let editorFactory: unknown;
-	let registeredShortcut = false;
-
-	editSessionInPlace({
-		registerCommand() {},
-		registerShortcut() {
-			registeredShortcut = true;
-		},
-		on(event: string, handler: (event: unknown, ctx: any) => void) {
-			if (event === "session_start") {
-				sessionStartHandler = handler;
-			}
-		},
-	} as any);
-
-	sessionStartHandler?.({}, {
-		mode: "tui",
-		ui: {
-			getEditorComponent: () => undefined,
-			setEditorComponent: (factory: unknown) => {
-				editorFactory = factory;
-			},
-		},
-	});
-
-	assert.equal(registeredShortcut, true);
-	assert.equal(editorFactory, undefined, "stock editor must not be replaced just for a hotkey");
-});
-
-test("custom editor hotkey wraps existing editors and restores expanded drafts", async () => {
-	let sessionStartHandler: ((event: unknown, ctx: any) => void) | undefined;
-	let commandHandler: ((args: string, ctx: any) => Promise<void>) | undefined;
-	let editorFactory: ((tui: unknown, theme: unknown, keybindings: any) => any) | undefined;
-	let previousFactoryCalled = false;
-	const baseActionHandlers = new Map();
-	const setTextCalls: string[] = [];
-	const handledInputs: string[] = [];
-	const baseEditor = {
-		actionHandlers: baseActionHandlers,
-		getText: () => "[paste #1 +20 lines]",
-		getExpandedText: () => "expanded draft",
-		setText: (text: string) => {
-			setTextCalls.push(text);
-		},
-		handleInput: (data: string) => {
-			handledInputs.push(data);
-		},
-		render: () => [],
-		invalidate() {},
-	};
-
-	editSessionInPlace({
-		registerCommand(name: string, options: { handler: (args: string, ctx: any) => Promise<void> }) {
-			if (name === "edit-turn") {
-				commandHandler = options.handler;
-			}
-		},
-		registerShortcut() {},
-		on(event: string, handler: (event: unknown, ctx: any) => void) {
-			if (event === "session_start") {
-				sessionStartHandler = handler;
-			}
-		},
-		getCommands: () => [{ name: "edit-turn" }],
-	} as any);
-
-	sessionStartHandler?.({}, {
-		mode: "tui",
-		ui: {
-			getEditorComponent: () => () => {
-				previousFactoryCalled = true;
-				return baseEditor;
-			},
-			setEditorComponent: (factory: typeof editorFactory) => {
-				editorFactory = factory;
-			},
-		},
-	});
-
-	const editor = editorFactory?.({}, {}, { matches: () => false });
-	editor?.onAction("app.interrupt", () => undefined);
-	editor?.handleInput("\x1b[69;6u");
-
-	let restoredDraft: string | undefined;
-	let renderRequests = 0;
-	await commandHandler?.("", {
-		mode: "tui",
-		hasPendingMessages: () => false,
-		isIdle: () => true,
-		sessionManager: { getBranch: () => [] },
-		ui: {
-			notify() {},
-			setEditorText: (text: string) => {
-				restoredDraft = text;
-			},
-			setStatus: () => {
-				renderRequests += 1;
-			},
-		},
-	});
-
-	assert.equal(previousFactoryCalled, true, "hotkey editor should wrap an existing custom editor factory");
-	assert.deepEqual(setTextCalls, ["/edit-turn"]);
-	assert.deepEqual(handledInputs, ["\r"]);
-	assert.equal(restoredDraft, "expanded draft");
-	assert.equal(renderRequests, 1, "restoring a draft should request a Pi 0.84 TUI redraw");
-	assert.equal(baseActionHandlers.has("app.interrupt"), true, "app action handlers should be delegated to CustomEditor-like bases");
-});
-
 test("session lifecycle clears hotkey drafts before a replacement session starts", async () => {
-	let sessionStartHandler: ((event: unknown, ctx: any) => void) | undefined;
+	let sessionStartHandler: (() => void) | undefined;
 	let commandHandler: ((args: string, ctx: any) => Promise<void>) | undefined;
-	let editorFactory: ((tui: unknown, theme: unknown, keybindings: any) => any) | undefined;
+	let shortcutHandler: ((ctx: any) => void) | undefined;
 
 	editSessionInPlace({
-		registerCommand(_name: string, options: { handler: (args: string, ctx: any) => Promise<void> }) {
-			commandHandler = options.handler;
-		},
-		registerShortcut() {},
-		on(event: string, handler: (event: unknown, ctx: any) => void) {
+		registerCommand(_name: string, options: { handler: typeof commandHandler }) { commandHandler = options.handler; },
+		registerShortcut(_key: string, options: { handler: typeof shortcutHandler }) { shortcutHandler = options.handler; },
+		on(event: string, handler: () => void) {
 			if (event === "session_start") sessionStartHandler = handler;
 		},
-		getCommands: () => [{ name: "edit-turn" }],
+		getCommands: () => [{ name: "edit-turn", source: "extension" }],
+		sendUserMessage() {},
 	} as any);
 
-	const makeContext = (setEditorText: (text: string) => void) => ({
+	let restored = false;
+	const ctx = {
 		mode: "tui",
 		hasPendingMessages: () => false,
 		isIdle: () => true,
 		sessionManager: { getBranch: () => [] },
 		ui: {
-			getEditorComponent: () => () => ({
-				getText: () => "draft",
-				setText() {},
-				handleInput() {},
-				render: () => [],
-				invalidate() {},
-			}),
-			setEditorComponent: (factory: typeof editorFactory) => {
-				editorFactory = factory;
+			getEditorText: () => "draft",
+			setEditorText: (text: string) => {
+				if (text) restored = true;
 			},
 			notify() {},
-			setEditorText,
 			setStatus() {},
 		},
-	});
+	};
 
-	let restored = false;
-	sessionStartHandler?.({}, makeContext(() => {
-		restored = true;
-	}));
-	editorFactory?.({}, {}, { matches: () => false }).handleInput("\x1b[69;6u");
-
+	shortcutHandler?.(ctx);
 	// A replacement session gets a fresh session_start before its command context is used.
-	sessionStartHandler?.({}, makeContext(() => {
-		restored = true;
-	}));
-	await commandHandler?.("", makeContext(() => {
-		restored = true;
-	}));
+	sessionStartHandler?.();
+	await commandHandler?.("", ctx);
 
 	assert.equal(restored, false, "draft from the old session must not cross replacement boundaries");
+});
+
+test("package lock excludes WorkOS URLs", () => {
+	const lock = fs.readFileSync(new URL("../package-lock.json", import.meta.url), "utf8");
+	assert.doesNotMatch(lock, /(?:[a-z][a-z0-9+.-]*:)?\/\/[^\s"]*(?:workos|socket-firewall)/i);
 });

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import editSessionInPlace from "../extensions/edit-session-in-place.js";
+import editSessionInPlace from "../extensions/edit-session-in-place.ts";
 
 for (const pending of [false, true]) {
 	test(`native shortcut preserves expanded draft on ${pending ? "pending queues" : "empty branch"}`, async () => {

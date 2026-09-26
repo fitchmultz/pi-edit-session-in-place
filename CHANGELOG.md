@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-26
+
+### Breaking Changes
+- require Node.js `>=24.15.0`
+- require Pi `0.87.1` or later; tested on official Pi and the maintained `fitchmultz/pi` fork
+- `Ctrl+Shift+E` always uses Pi's registered shortcut and native extension-command dispatch; the custom-editor wrapper and Pi `<0.85.1` fallbacks are removed. Custom editors built on Pi's `CustomEditor` receive the shortcut natively
+
+### Changed
+- development baseline: Pi `0.87.1`, TypeScript `7.0.2`, `@types/node` `24.19.0`, npm `12.1.0`
+- tests run directly with `node --test` through Node's type stripping; no build step
+- CI qualifies official Pi and the current fork through the shared `fitchmultz/.github` automation
+
 ### Fixed
 - preserve unsent drafts when repeated edit hotkeys arrive before command dispatch
 - submit the mouse-highlighted message in the fullscreen picker instead of the previously keyboard-selected message
@@ -12,12 +24,8 @@ All notable changes to this project will be documented in this file.
 - preserve the restored conversation after reopening a session when an assistant edit is cancelled or fails
 - mark edited assistant replies as completed so corrections to interrupted or failed replies remain in model context
 - restore the expanded hotkey draft before an edit command finishes when a UI or navigation callback rejects
-- ignore repeated edit hotkeys and commands while an edit operation is running, including interruption cleanup, on both the native shortcut and custom-editor wrapper paths
-- remove the redundant shutdown-only draft reset; idle stock-editor sessions no longer require shutdown for this extension on checkpoint-capable Pi forks, while native draft, dialog, callback, queue, and custom-editor guards remain intact
-
-### Changed
-- use Pi's registered shortcut and explicit extension-command dispatch for the stock editor on Pi `0.85.1+`, retaining the wrapper for older runtimes and pre-existing custom editors
-- pin local Pi development dependencies to `0.85.1`; runtime peers and the Pi `0.84.0` minimum are unchanged
+- ignore repeated edit hotkeys and commands while an edit operation is running, including interruption cleanup
+- remove the redundant shutdown-only draft reset; idle sessions no longer require shutdown for this extension on checkpoint-capable Pi forks
 
 ## [0.2.0] - 2026-08-06
 

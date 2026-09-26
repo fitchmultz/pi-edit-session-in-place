@@ -1,10 +1,13 @@
 {
   "name": "pi-edit-session-in-place",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "pi extension that lets you re-edit or delete an earlier user message in the current session branch",
   "author": "Mitch Fultz (https://github.com/fitchmultz)",
   "license": "MIT",
   "type": "module",
+  "engines": {
+    "node": ">=24.15.0"
+  },
   "keywords": [
     "pi-package",
     "pi",
@@ -23,15 +26,11 @@
   },
   "homepage": "https://github.com/fitchmultz/pi-edit-session-in-place#readme",
   "scripts": {
-    "clean:test": "node -e \"require('node:fs').rmSync('.test-dist', { recursive: true, force: true })\"",
-    "build:test": "npm run clean:test && tsc -p tsconfig.test.json",
-    "test": "npm run build:test && node --test .test-dist/tests/*.test.js",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
-    "check": "npm run verify",
-    "check:compat": "npm test",
-    "check:package": "node scripts/check-package.mjs",
-    "verify": "npm test && npm run check:package",
-    "prepublishOnly": "npm run verify"
+    "test": "node --test tests/*.test.ts",
+    "typecheck": "tsc",
+    "check": "npm test && npm run typecheck && npm pack --dry-run",
+    "check:compat": "npm run check",
+    "prepublishOnly": "npm run check"
   },
   "files": [
     "extensions",
@@ -39,25 +38,18 @@
     "CHANGELOG.md",
     "LICENSE"
   ],
-  "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*",
-    "@earendil-works/pi-tui": "*"
-  },
-  "engines": {
-    "node": ">=22.19.0"
-  },
-  "devDependencies": {
-    "@earendil-works/pi-coding-agent": "0.86.1",
-    "@earendil-works/pi-tui": "0.86.1",
-    "@types/node": "^25.9.1",
-    "typescript": "^6.0.3"
-  },
   "pi": {
     "extensions": [
       "./extensions"
     ]
   },
-  "packageManager": "npm@11.0.0",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
   "peerDependenciesMeta": {
     "@earendil-works/pi-coding-agent": {
       "optional": true
@@ -65,5 +57,12 @@
     "@earendil-works/pi-tui": {
       "optional": true
     }
-  }
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.87.1",
+    "@earendil-works/pi-tui": "0.87.1",
+    "@types/node": "24.19.0",
+    "typescript": "7.0.2"
+  },
+  "packageManager": "npm@12.1.0"
 }

@@ -1,6 +1,4 @@
 node_modules/
-.test-dist/
-.pi/
 .DS_Store
 npm-debug.log*
 package-lock.json.*

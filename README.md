@@ -4,7 +4,7 @@ A [pi](https://github.com/earendil-works/pi) extension that lets you rewind to a
 
 ## Compatibility
 
-Requires Pi `0.87.1` or later and Node.js `>=24.15.0`. CI qualifies the official Pi release pinned in `devDependencies` and the current `main` of the maintained [`fitchmultz/pi`](https://github.com/fitchmultz/pi) fork. Pi core packages are optional wildcard peers: the extension uses the host's bundled runtime rather than installing another copy.
+Requires Pi `0.87.1` or later and Node.js `>=24.15.0`. The development baseline is official Pi `0.99.1`. CI qualifies the official Pi release pinned in `devDependencies` and the maintained [`fitchmultz/pi`](https://github.com/fitchmultz/pi) fork's `main`, recording the exact checkout commit before building. Pi core packages are optional wildcard peers: the extension uses the host's bundled runtime rather than installing another copy.
 
 ## What it does
 
@@ -73,4 +73,4 @@ npm run check
 
 For interactive testing, load the source directly: `pi -e ./extensions/edit-session-in-place.ts`.
 
-The required `compatibility / compatibility` check builds the fork's current `main`, then runs the shared [`fitchmultz/.github`](https://github.com/fitchmultz/.github) qualification against official Pi and the fork: package contracts, a fresh Git install, an npm tarball install, and the real bundled Pi CLI. `PI_COMPAT_EXPECTED_VERSION` and `PI_COMPAT_EXPECTED_PACKAGE_DIR` let the tests assert which host they imported; without them the tests assert the pinned official version in local `node_modules`.
+The required `compatibility / compatibility` check records and builds the fork checkout's exact commit, then runs the shared [`fitchmultz/.github`](https://github.com/fitchmultz/.github) qualification against official Pi and the fork: package contracts, a fresh Git install, an npm tarball install, and the real bundled Pi CLI. `PI_COMPAT_EXPECTED_VERSION` and `PI_COMPAT_EXPECTED_PACKAGE_DIR` let the tests assert which host they imported; without them the tests assert the pinned official version in local `node_modules`.

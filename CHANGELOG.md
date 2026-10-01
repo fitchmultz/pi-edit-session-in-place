@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- development baseline: official Pi `0.99.2`, with matching compatibility documentation; runtime requirements remain unchanged
+- development package manager: npm `12.2.0`
+
+### Fixed
+- update the development-only `brace-expansion` lock entry to `5.0.12`, resolving its CPU and stack-exhaustion advisories
+
 ## [0.3.0] - 2026-09-26
 
 ### Breaking Changes

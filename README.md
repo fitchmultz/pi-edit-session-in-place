@@ -4,7 +4,7 @@ A [pi](https://github.com/earendil-works/pi) extension that lets you rewind to a
 
 ## Compatibility
 
-Requires Pi `0.87.1` or later and Node.js `>=24.15.0`. The development baseline is official Pi `0.99.1`. CI qualifies the official Pi release pinned in `devDependencies` and the maintained [`fitchmultz/pi`](https://github.com/fitchmultz/pi) fork's `main`, recording the exact checkout commit before building. Pi core packages are optional wildcard peers: the extension uses the host's bundled runtime rather than installing another copy.
+Requires Pi `0.87.1` or later and Node.js `>=24.15.0`. The development baseline is official Pi `0.99.2`. CI qualifies the official Pi release pinned in `devDependencies` and the maintained [`fitchmultz/pi`](https://github.com/fitchmultz/pi) fork's `main`, recording the exact checkout commit before building. Pi core packages are optional wildcard peers: the extension uses the host's bundled runtime rather than installing another copy.
 
 ## What it does
 

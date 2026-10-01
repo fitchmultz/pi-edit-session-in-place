@@ -4,7 +4,7 @@ A [pi](https://github.com/earendil-works/pi) extension that lets you rewind to a
 
 ## Compatibility
 
-Requires Pi `0.87.1` or later and Node.js `>=24.15.0`. The development baseline is official Pi `0.99.2`. CI qualifies the official Pi release pinned in `devDependencies` and the maintained [`fitchmultz/pi`](https://github.com/fitchmultz/pi) fork's `main`, recording the exact checkout commit before building. Pi core packages are optional wildcard peers: the extension uses the host's bundled runtime rather than installing another copy.
+Requires Pi `1.0.0` or later and Node.js `>=24.15.0`. Development and standalone/packed qualification use the official Pi 1.0.0 cohort. CI records the maintained [`fitchmultz/pi`](https://github.com/fitchmultz/pi) fork's exact revision and qualifies supported hosts; an older fork is truthfully recorded as unattempted, not passing. Pi core packages are optional wildcard peers: the extension uses the host's bundled runtime rather than installing another copy.
 
 ## What it does
 
@@ -27,7 +27,7 @@ Or from GitHub:
 pi install https://github.com/fitchmultz/pi-edit-session-in-place
 ```
 
-Restart Pi after installing or updating the extension to load its code.
+Use `/reload` after updating extension source; restart Pi after changing dependencies or the host runtime.
 
 ## Usage
 
@@ -45,6 +45,7 @@ Run `/edit-turn` or press `Ctrl+Shift+E`.
 - `Ctrl+X` clears the entire message
 - `Escape` cancels without changing history
 - `Ctrl+G` opens `$VISUAL`/`$EDITOR` when set; parse or launch failures are reported as warnings
+- Other controls use Pi's native `CustomEditor`/editor bindings, including undo and multiline paste; the embedded editor does not register main-session resend or interrupt actions
 
 Submitting an empty user message deletes it: pi rewinds to just before that message and leaves the main editor empty. Submitting an empty assistant message creates a branch that keeps everything before that response, including tool results, custom messages, compactions, and metadata, without the selected response.
 
@@ -58,6 +59,9 @@ Submitting an empty user message deletes it: pi rewinds to just before that mess
 - Queued messages must be cleared before using the command
 - Repeated shortcuts or `/edit-turn` invocations are ignored while an edit is running, including while an interrupted response settles
 - The shortcut's draft is restored on cancellation or a rejected editing callback; successful edits and deletes replace it
+- Replacement, fork, resume, reload and shutdown dispose pending dialogs and discard outgoing draft ownership. No late callback may restore that draft into the incoming session or navigate using a stale context
+- External editing uses a private temporary file and asynchronous terminal handoff; disposal stops its child, resumes terminal input once and ignores late completion
+- Canonical `context_edit` entries intentionally are not used for rewinding: they alter earlier context while retaining later turns, which is not this command's edit/delete-and-continue behavior
 - The shortcut follows Pi's focus and shortcut-conflict rules. Custom editors built on Pi's `CustomEditor` receive it natively
 
 ## Development
@@ -67,10 +71,10 @@ npm ci --ignore-scripts
 npm run check
 ```
 
-- `npm test` runs `node --test` directly on the TypeScript sources, including real `createAgentSession()` navigation tests
+- `npm test` runs `node --test` directly on TypeScript, including real `createAgentSession()` navigation and `InteractiveMode` shortcut/editor/pointer/replacement/external-editor tests in both TUI modes, without model calls or operator UI changes
 - `npm run typecheck` runs `tsc` (no emit)
 - `npm run check` runs both plus `npm pack --dry-run`; `check:compat` and `prepublishOnly` call it
 
 For interactive testing, load the source directly: `pi -e ./extensions/edit-session-in-place.ts`.
 
-The required `compatibility / compatibility` check records and builds the fork checkout's exact commit, then runs the shared [`fitchmultz/.github`](https://github.com/fitchmultz/.github) qualification against official Pi and the fork: package contracts, a fresh Git install, an npm tarball install, and the real bundled Pi CLI. `PI_COMPAT_EXPECTED_VERSION` and `PI_COMPAT_EXPECTED_PACKAGE_DIR` let the tests assert which host they imported; without them the tests assert the pinned official version in local `node_modules`.
+The required `compatibility / compatibility` check records and builds supported fork revisions, then runs the shared [`fitchmultz/.github`](https://github.com/fitchmultz/.github) qualification against official Pi and the fork: package contracts, a fresh Git install, an npm tarball install, and the real bundled Pi CLI. `PI_COMPAT_EXPECTED_VERSION` and `PI_COMPAT_EXPECTED_PACKAGE_DIR` let the tests assert which host they imported; without them the tests assert the pinned official version in local `node_modules`.

@@ -12,6 +12,7 @@ const harness = () => {
 	let command: Parameters<ExtensionAPI["registerCommand"]>[1]["handler"];
 	let sent = 0;
 	const tasks: Promise<void>[] = [];
+	const events = new Map<string, () => void>();
 	const ctx = {
 		mode: "tui", hasUI: true,
 		hasPendingMessages: () => false,
@@ -31,7 +32,7 @@ const harness = () => {
 	editSessionInPlace({
 		registerShortcut(_key: string, options: Parameters<ExtensionAPI["registerShortcut"]>[1]) { shortcut = options.handler; },
 		registerCommand(_name: string, options: Parameters<ExtensionAPI["registerCommand"]>[1]) { command = options.handler; },
-		on() {},
+		on(event: string, handler: () => void) { events.set(event, handler); },
 		getCommands: () => [{name: "edit-turn", source: "extension"}],
 		sendUserMessage() {
 			sent++;
@@ -44,6 +45,7 @@ const harness = () => {
 		text: () => text, sent: () => sent,
 		press: () => shortcut(ctx),
 		command: () => command("", ctx),
+		replace: () => events.get("session_start")!(),
 	};
 };
 
@@ -93,3 +95,39 @@ test("repeated hotkey and direct command cannot take a running command's draft",
 	await h.tasks[1];
 	assert.equal(h.text(), h.original);
 });
+
+for (const boundary of ["waitForIdle", "selection", "confirmation", "editor", "navigation"] as const) {
+	test(`replacement at ${boundary} ignores a late callback and never touches the outgoing UI`, async () => {
+		const h = harness();
+		let release!: () => void;
+		const pending = new Promise<void>(resolve => { release = resolve; });
+		const selected = { entryId: "user", role: "user", text: "prior prompt", hasImages: boundary === "confirmation" };
+		if (boundary === "waitForIdle") {
+			h.ctx.isIdle = () => false;
+			h.ctx.waitForIdle = () => pending;
+		} else {
+			let dialogs = 0;
+			h.ctx.ui.custom = (async () => {
+				if (++dialogs === 1) {
+					if (boundary === "selection") await pending;
+					return selected;
+				}
+				if (boundary === "editor") await pending;
+				return "edited text";
+			}) as ExtensionCommandContext["ui"]["custom"];
+			h.ctx.ui.confirm = async () => { await pending; return true; };
+			h.ctx.navigateTree = async () => { await pending; return { cancelled: false }; };
+		}
+		h.press();
+		await new Promise(resolve => setImmediate(resolve));
+		h.replace();
+		h.ctx.ui.setEditorText("Incoming draft");
+		h.ctx.sessionManager.getBranch = () => { assert.fail("Outgoing session manager is invalid after replacement"); };
+		for (const key of ["getEditorText", "setEditorText", "setStatus", "notify"] as const) {
+			h.ctx.ui[key] = (() => { assert.fail("Outgoing UI is invalid after replacement"); }) as never;
+		}
+		release();
+		await h.tasks[0];
+		assert.equal(h.text(), "Incoming draft");
+	});
+}

@@ -5,13 +5,14 @@
  * Usage: Install as a pi package and invoke with /edit-turn or Ctrl+Shift+E.
  * Invariants/Assumptions: Operates on the current branch only; later branch history remains in /tree; empty submit means delete.
  */
-import { spawnSync } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
 import {
 	DynamicBorder,
+	CustomEditor,
 	keyHint,
 	rawKeyHint,
 	type ExtensionAPI,
@@ -23,13 +24,11 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import {
 	Container,
-	Editor,
 	Key,
 	SelectList,
 	Spacer,
 	Text,
 	matchesKey,
-	type EditorComponent,
 	type EditorTheme,
 	type Focusable,
 	type TUI,
@@ -208,9 +207,6 @@ export const parseExternalEditorCommand = (command: string): ExternalEditorComma
 };
 
 export const trimSingleTrailingNewline = (text: string) => text.replace(/\r?\n$/, "");
-
-export const getExpandedEditorText = (editor: Pick<EditorComponent, "getText" | "getExpandedText">) =>
-	editor.getExpandedText?.() ?? editor.getText();
 
 export const extractEditableText = (content: unknown): { text: string | undefined; hasImages: boolean } => {
 	if (typeof content === "string") {
@@ -416,17 +412,22 @@ class EditableMessageSelector extends Container {
 
 		if (this.keybindings.matches(data, "tui.select.cancel")) {
 			this.onCancel();
+			return;
 		}
+		this.selectList.handleInput(data);
 	}
 }
 
 class ReeditMessageEditor extends Container implements Focusable {
-	private readonly editor: Editor;
+	private readonly editor: CustomEditor;
 	private readonly tui: TUI;
 	private readonly keybindings: KeybindingsManager;
 	private readonly onCancel: () => void;
 	private readonly onError: (message: string) => void;
 	private _focused = false;
+	private disposed = false;
+	private externalChild?: ChildProcess;
+	private resumeTerminal?: () => void;
 
 	get focused(): boolean {
 		return this._focused;
@@ -458,7 +459,8 @@ class ReeditMessageEditor extends Container implements Focusable {
 		this.addChild(new Text(theme.fg("accent", title), 1, 0));
 		this.addChild(new Spacer(1));
 
-		this.editor = new Editor(tui, createEditorTheme(theme));
+		this.editor = new CustomEditor(tui, createEditorTheme(theme), keybindings);
+		this.editor.onAction("app.editor.external", () => void this.openExternalEditor());
 		this.editor.setText(prefill);
 		this.editor.onSubmit = (value) => onSubmit(value);
 		this.addChild(this.editor);
@@ -479,6 +481,7 @@ class ReeditMessageEditor extends Container implements Focusable {
 	}
 
 	handleInput(data: string): void {
+		if (this.disposed || this.resumeTerminal) return;
 		if (matchesKey(data, CLEAR_ALL_KEY)) {
 			this.editor.setText("");
 			this.tui.requestRender();
@@ -490,21 +493,23 @@ class ReeditMessageEditor extends Container implements Focusable {
 			return;
 		}
 
-		if (this.keybindings.matches(data, "app.editor.external")) {
-			this.openExternalEditor();
-			return;
-		}
-
 		this.editor.handleInput(data);
 	}
 
-	private openExternalEditor() {
+	dispose() {
+		this.disposed = true;
+		// ponytail: only the foreground child is owned; use --wait for GUI editors, not detached process-tree cleanup.
+		this.externalChild?.kill("SIGKILL");
+		this.resumeTerminal?.();
+	}
+
+	private async openExternalEditor() {
 		const editorCommand = resolveExternalEditorCommand(process.env);
 		if (!editorCommand) {
 			return;
 		}
 
-		const currentText = getExpandedEditorText(this.editor);
+		const currentText = this.editor.getExpandedText();
 		let parsedCommand: ExternalEditorCommand;
 		try {
 			parsedCommand = parseExternalEditorCommand(editorCommand);
@@ -513,19 +518,32 @@ class ReeditMessageEditor extends Container implements Focusable {
 			return;
 		}
 
-		const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), EXTERNAL_EDITOR_TMP_PREFIX));
-		const tempFile = path.join(tempDir, EXTERNAL_EDITOR_FILE_NAME);
+		let tempDir: string | undefined;
 		let nextText: string | undefined;
 		let errorMessage: string | undefined;
 
 		try {
+			tempDir = fs.mkdtempSync(path.join(os.tmpdir(), EXTERNAL_EDITOR_TMP_PREFIX));
+			const tempFile = path.join(tempDir, EXTERNAL_EDITOR_FILE_NAME);
 			fs.writeFileSync(tempFile, currentText, { encoding: "utf-8", flag: "wx", mode: 0o600 });
 			this.tui.stop();
+			this.resumeTerminal = () => {
+				this.resumeTerminal = undefined;
+				this.tui.start();
+				this.tui.requestRender(true);
+			};
 
-			const result = spawnSync(parsedCommand.executable, [...parsedCommand.args, tempFile], {
-				stdio: "inherit",
-				shell: process.platform === "win32",
+			// Native editor handoff is asynchronous so Windows console input is released.
+			// Keep our quoted-command parser, private file mode and warning contract.
+			const result = await new Promise<{ status: number | null; error?: Error }>((resolve) => {
+				const child = spawn(parsedCommand.executable, [...parsedCommand.args, tempFile], {
+					stdio: "inherit", shell: process.platform === "win32",
+				});
+				this.externalChild = child;
+				child.on("error", (error) => resolve({ status: null, error }));
+				child.on("close", (status) => resolve({ status }));
 			});
+			if (this.disposed) return;
 
 			if (result.error) {
 				errorMessage = `External editor failed: ${result.error.message}`;
@@ -534,12 +552,18 @@ class ReeditMessageEditor extends Container implements Focusable {
 			} else {
 				nextText = trimSingleTrailingNewline(fs.readFileSync(tempFile, "utf-8"));
 			}
+		} catch (error) {
+			errorMessage = error instanceof Error ? error.message : "External editor failed.";
 		} finally {
-			fs.rmSync(tempDir, { recursive: true, force: true });
-			this.tui.start();
-			this.tui.requestRender(true);
+			this.externalChild = undefined;
+			this.resumeTerminal?.();
+			if (tempDir) {
+				try { fs.rmSync(tempDir, { recursive: true, force: true }); }
+				catch (error) { errorMessage = error instanceof Error ? error.message : "External editor cleanup failed."; }
+			}
 		}
 
+		if (this.disposed) return;
 		if (errorMessage) {
 			this.onError(errorMessage);
 			return;
@@ -552,32 +576,32 @@ class ReeditMessageEditor extends Container implements Focusable {
 	}
 }
 
-const selectEditableMessage = async (ctx: ExtensionCommandContext, userMessages: EditableMessage[], allMessages: EditableMessage[]) =>
+const cancelOnAbort = (component: Container & { dispose?: () => void }, signal: AbortSignal, cancel: () => void) => {
+	const dispose = component.dispose?.bind(component);
+	signal.addEventListener("abort", cancel, { once: true });
+	component.dispose = () => {
+		signal.removeEventListener("abort", cancel);
+		dispose?.();
+	};
+	if (signal.aborted) cancel();
+	return component;
+};
+
+const selectEditableMessage = async (ctx: ExtensionCommandContext, userMessages: EditableMessage[], allMessages: EditableMessage[], signal: AbortSignal) =>
 	ctx.ui.custom<EditableMessage | undefined>((tui, theme, keybindings, done) =>
-		new EditableMessageSelector(
-			tui,
-			theme,
-			keybindings,
-			SELECT_TITLE,
-			userMessages,
-			allMessages,
-			(message) => done(message),
-			() => done(undefined),
-		),
+		cancelOnAbort(new EditableMessageSelector(
+			tui, theme, keybindings, SELECT_TITLE, userMessages, allMessages,
+			(message) => done(message), () => done(undefined),
+		), signal, () => done(undefined)),
 	);
 
-const editTextInCustomEditor = async (ctx: ExtensionCommandContext, prefill: string) =>
+const editTextInCustomEditor = async (ctx: ExtensionCommandContext, prefill: string, signal: AbortSignal) =>
 	ctx.ui.custom<string | undefined>((tui, theme, keybindings, done) =>
-		new ReeditMessageEditor(
-			tui,
-			theme,
-			keybindings,
-			EDIT_TITLE,
-			prefill,
-			(value) => done(value),
-			() => done(undefined),
-			(message) => ctx.ui.notify(message, "warning"),
-		),
+		cancelOnAbort(new ReeditMessageEditor(
+			tui, theme, keybindings, EDIT_TITLE, prefill,
+			(value) => done(value), () => done(undefined),
+			(message) => { if (!signal.aborted) ctx.ui.notify(message, "warning"); },
+		), signal, () => done(undefined)),
 	);
 
 type DraftState = { value?: string };
@@ -615,7 +639,8 @@ export const getWritableSessionManager = (value: unknown): WritableSessionManage
 	return WRITABLE_SESSION_METHODS.every((method) => typeof value[method] === "function") ? value : undefined;
 };
 
-export const editAssistantMessage = async (ctx: ExtensionCommandContext, selected: EditableMessage, editedText: string) => {
+export const editAssistantMessage = async (ctx: ExtensionCommandContext, selected: EditableMessage, editedText: string, signal?: AbortSignal) => {
+	if (signal?.aborted) return false;
 	if (!selected.parentId) {
 		ctx.ui.notify("Cannot edit an assistant message with no parent entry.", "warning");
 		return false;
@@ -642,15 +667,16 @@ export const editAssistantMessage = async (ctx: ExtensionCommandContext, selecte
 	}
 
 	const editorTextBeforeNavigation = ctx.ui.getEditorText();
-	const restoreEditor = () => setEditorTextAndRender(ctx, editorTextBeforeNavigation);
+	const restoreEditor = () => { if (!signal?.aborted) setEditorTextAndRender(ctx, editorTextBeforeNavigation); };
 	const restore = async () => {
+		if (signal?.aborted) return false;
 		try {
 			return !(await ctx.navigateTree(oldLeafId, { summarize: false })).cancelled;
 		} catch {
 			return false;
 		} finally {
 			// Reopening resumes at the last saved entry; navigation only moves the in-memory leaf.
-			sessionManager.appendCustomEntry("edit-session-in-place:assistant-restore");
+			if (!signal?.aborted) sessionManager.appendCustomEntry("edit-session-in-place:assistant-restore");
 		}
 	};
 	let synchronizedLeafId: string | null | undefined;
@@ -658,6 +684,7 @@ export const editAssistantMessage = async (ctx: ExtensionCommandContext, selecte
 
 	try {
 		const parentResult = await ctx.navigateTree(selected.parentId, { summarize: false });
+		if (signal?.aborted) return false;
 		if (parentResult.cancelled) {
 			restoreEditor();
 			return false;
@@ -699,33 +726,38 @@ export const editAssistantMessage = async (ctx: ExtensionCommandContext, selecte
 		else sessionManager.resetLeaf();
 		replacementNavigationStarted = true;
 		const result = await ctx.navigateTree(targetId, { summarize: false });
+		if (signal?.aborted) return false;
 		if (!result.cancelled) {
 			restoreEditor();
 			return true;
 		}
 	} catch {
+		if (signal?.aborted) return false;
 		if (!replacementNavigationStarted && synchronizedLeafId !== undefined) {
 			if (synchronizedLeafId) sessionManager.branch(synchronizedLeafId);
 			else sessionManager.resetLeaf();
 		}
 		if (await restore()) {
+			if (signal?.aborted) return false;
 			ctx.ui.notify("Assistant editing failed; the prior runtime state was restored.", "warning");
 			restoreEditor();
 			return false;
 		}
+		if (signal?.aborted) return false;
 		ctx.ui.notify("Assistant editing failed; Pi kept the last synchronized session position.", "warning");
 		restoreEditor();
 		return false;
 	}
 
 	if (!(await restore())) {
+		if (signal?.aborted) return false;
 		ctx.ui.notify("Assistant editing was cancelled; Pi kept the last synchronized session position.", "warning");
 	}
 	restoreEditor();
 	return false;
 };
 
-const handleEditTurn = async (pi: ExtensionAPI, ctx: ExtensionCommandContext, draft: DraftState) => {
+const handleEditTurn = async (pi: ExtensionAPI, ctx: ExtensionCommandContext, draft: DraftState, signal: AbortSignal) => {
 	if (ctx.mode !== "tui") {
 		if (ctx.hasUI) {
 			ctx.ui.notify("/edit-turn requires interactive TUI mode.", "warning");
@@ -743,6 +775,7 @@ const handleEditTurn = async (pi: ExtensionAPI, ctx: ExtensionCommandContext, dr
 	if (!ctx.isIdle()) {
 		ctx.abort();
 		await ctx.waitForIdle();
+		if (signal.aborted) return;
 	}
 
 	const userMessages = getEditableMessages(ctx.sessionManager.getBranch());
@@ -753,7 +786,8 @@ const handleEditTurn = async (pi: ExtensionAPI, ctx: ExtensionCommandContext, dr
 		return;
 	}
 
-	const selected = await selectEditableMessage(ctx, userMessages, allMessages);
+	const selected = await selectEditableMessage(ctx, userMessages, allMessages, signal);
+	if (signal.aborted) return;
 	if (!selected) {
 		restoreDraftIfNeeded(ctx, draft);
 		return;
@@ -763,14 +797,17 @@ const handleEditTurn = async (pi: ExtensionAPI, ctx: ExtensionCommandContext, dr
 		const keepGoing = await ctx.ui.confirm(
 			"Drop images?",
 			"That message contains images. Editing or deleting it here will keep only the text and drop the images. Continue?",
+			{ signal },
 		);
+		if (signal.aborted) return;
 		if (!keepGoing) {
 			restoreDraftIfNeeded(ctx, draft);
 			return;
 		}
 	}
 
-	const editedText = await editTextInCustomEditor(ctx, selected.text);
+	const editedText = await editTextInCustomEditor(ctx, selected.text, signal);
+	if (signal.aborted) return;
 	if (editedText === undefined) {
 		restoreDraftIfNeeded(ctx, draft);
 		return;
@@ -778,7 +815,8 @@ const handleEditTurn = async (pi: ExtensionAPI, ctx: ExtensionCommandContext, dr
 
 	const isDelete = editedText.trim().length === 0;
 	if (selected.role === "assistant") {
-		const ok = await editAssistantMessage(ctx, selected, editedText);
+		const ok = await editAssistantMessage(ctx, selected, editedText, signal);
+		if (signal.aborted) return;
 		if (!ok) {
 			restoreDraftIfNeeded(ctx, draft);
 			return;
@@ -792,6 +830,7 @@ const handleEditTurn = async (pi: ExtensionAPI, ctx: ExtensionCommandContext, dr
 	// Pi skips navigation when the selected user message is already the leaf.
 	if (ctx.sessionManager.getLeafId() === selected.entryId) pi.appendEntry("edit-session-in-place:leaf-rewind");
 	const result = await ctx.navigateTree(selected.entryId, { summarize: false });
+	if (signal.aborted) return;
 	if (result.cancelled) {
 		restoreDraftIfNeeded(ctx, draft);
 		return;
@@ -817,11 +856,16 @@ export const getEditTurnCommandText = (commands: Array<{ name: string }>) => {
 
 export default function editSessionInPlace(pi: ExtensionAPI) {
 	const draft: DraftState = {};
-	let editing = false;
+	let interaction: AbortController | undefined;
+	const reset = () => {
+		interaction?.abort();
+		interaction = undefined;
+		draft.value = undefined;
+	};
 	pi.registerShortcut(HOTKEY, {
 		description: "Select and re-edit a previous user message",
 		handler: (ctx) => {
-			if (ctx.mode !== "tui" || editing || draft.value !== undefined) return;
+			if (ctx.mode !== "tui" || interaction || draft.value !== undefined) return;
 			const commands = pi.getCommands();
 			const command = getEditTurnCommandText(commands);
 			if (!commands.some((item) => item.source === "extension" && `/${item.name}` === command)) return;
@@ -834,23 +878,27 @@ export default function editSessionInPlace(pi: ExtensionAPI) {
 	pi.registerCommand(COMMAND_NAME, {
 		description: "Select and re-edit a previous user message on the current branch (Ctrl+Shift+E)",
 		handler: async (_args, ctx) => {
-			if (editing) return;
-			editing = true;
+			if (interaction) return;
+			const controller = new AbortController();
+			interaction = controller;
+			const ownedDraft = { value: draft.value };
+			draft.value = undefined;
 			try {
-				await handleEditTurn(pi, ctx, draft);
+				await handleEditTurn(pi, ctx, ownedDraft, controller.signal);
+			} catch (error) {
+				if (!controller.signal.aborted) throw error;
 			} finally {
 				// Return the hotkey draft to the editor before command ownership ends,
 				// including rejected UI/navigation callbacks.
 				try {
-					restoreDraftIfNeeded(ctx, draft);
+					if (!controller.signal.aborted) restoreDraftIfNeeded(ctx, ownedDraft);
 				} finally {
-					editing = false;
+					if (interaction === controller) interaction = undefined;
 				}
 			}
 		},
 	});
 
-	pi.on("session_start", () => {
-		draft.value = undefined;
-	});
+	pi.on("session_start", reset);
+	pi.on("session_shutdown", reset);
 }

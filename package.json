@@ -64,5 +64,5 @@
     "@types/node": "24.19.0",
     "typescript": "7.0.2"
   },
-  "packageManager": "npm@12.1.0"
+  "packageManager": "npm@12.2.0"
 }

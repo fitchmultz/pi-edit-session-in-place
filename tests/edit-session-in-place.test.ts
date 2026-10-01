@@ -29,7 +29,6 @@ import editSessionInPlace, {
 	formatTimestamp,
 	getEditableMessages,
 	getEditTurnCommandText,
-	getExpandedEditorText,
 	getWritableSessionManager,
 	parseExternalEditorCommand,
 	resolveExternalEditorCommand,
@@ -217,6 +216,7 @@ const getTestModelRuntime = () =>
 	(testModelRuntime ??= ModelRuntime.create({
 		authPath: path.join(testAgentDir, "auth.json"),
 		modelsPath: null,
+		allowModelNetwork: false,
 	}));
 
 const createTestAgentSession = async (
@@ -691,17 +691,6 @@ test("trimSingleTrailingNewline removes only one final newline", () => {
 	assert.equal(trimSingleTrailingNewline("hello\r\n"), "hello");
 	assert.equal(trimSingleTrailingNewline("hello\n\n"), "hello\n");
 	assert.equal(trimSingleTrailingNewline("hello"), "hello");
-});
-
-test("getExpandedEditorText prefers marker-expanded editor content", () => {
-	assert.equal(
-		getExpandedEditorText({
-			getText: () => "[paste #1 +20 lines]",
-			getExpandedText: () => "expanded paste content",
-		}),
-		"expanded paste content",
-	);
-	assert.equal(getExpandedEditorText({ getText: () => "plain editor content" }), "plain editor content");
 });
 
 test("getEditTurnCommandText uses the latest suffixed invocation when duplicate packages are loaded", () => {

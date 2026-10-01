@@ -2,14 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.4.0] - 2026-10-01
 
 ### Changed
-- development baseline: official Pi `0.99.2`, with matching compatibility documentation; runtime requirements remain unchanged
+- require Pi `1.0.0` and use the exact official 1.0.0 development cohort
 - development package manager: npm `12.2.0`
+- use native `CustomEditor` app bindings and editor controls inside the existing edit dialog; retain clear-all, expanded paste text and quoted external-editor commands
+- use asynchronous native-style external-editor handoff, releasing Windows console input instead of blocking with `spawnSync`
 
 ### Fixed
-- update the development-only `brace-expansion` lock entry to `5.0.12`, resolving its CPU and stack-exhaustion advisories
+- retain patched top-level development dependencies; the selected Pi 1.0.0 host's shrinkwrapped `brace-expansion` copy remains an upstream development-host advisory, not bundled extension code
+- cancel pending picker, image confirmation and editor dialogs on replacement/reload/shutdown; discard outgoing draft ownership rather than touching stale command contexts
+- stop and dispose external-editor children, resume their terminal handoff exactly once and ignore late completion after disposal
+- preserve branch rewind/edit/delete and abandoned history using native navigation; canonical context edits are not a substitute because they retain later context
 
 ## [0.3.0] - 2026-09-26
 

@@ -16,6 +16,7 @@ for (const pending of [false, true]) {
 			on() { return () => {}; },
 			getCommands: () => [
 				{ name: "edit-turn:1", source: "extension" },
+				{ name: "other", source: "extension" },
 				{ name: "edit-turn:2", source: "extension" },
 			] as ReturnType<ExtensionAPI["getCommands"]>,
 			sendUserMessage(content, options) { sent.push({ content, options }); },

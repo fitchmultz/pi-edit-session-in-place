@@ -847,7 +847,7 @@ const handleEditTurn = async (pi: ExtensionAPI, ctx: ExtensionCommandContext, dr
 	);
 };
 
-export const getEditTurnCommandText = (commands: Array<{ name: string }>) => {
+const getEditTurnCommandText = (commands: Array<{ name: string }>) => {
 	const candidates = commands
 		.map((command) => command.name)
 		.filter((name) => name === COMMAND_NAME || name.startsWith(`${COMMAND_NAME}:`));

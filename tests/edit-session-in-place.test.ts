@@ -28,7 +28,6 @@ import editSessionInPlace, {
 	extractEditableText,
 	formatTimestamp,
 	getEditableMessages,
-	getEditTurnCommandText,
 	getWritableSessionManager,
 	parseExternalEditorCommand,
 	resolveExternalEditorCommand,
@@ -691,15 +690,6 @@ test("trimSingleTrailingNewline removes only one final newline", () => {
 	assert.equal(trimSingleTrailingNewline("hello\r\n"), "hello");
 	assert.equal(trimSingleTrailingNewline("hello\n\n"), "hello\n");
 	assert.equal(trimSingleTrailingNewline("hello"), "hello");
-});
-
-test("getEditTurnCommandText uses the latest suffixed invocation when duplicate packages are loaded", () => {
-	assert.equal(getEditTurnCommandText([]), "/edit-turn");
-	assert.equal(getEditTurnCommandText([{ name: "edit-turn" }]), "/edit-turn");
-	assert.equal(
-		getEditTurnCommandText([{ name: "edit-turn:1" }, { name: "other" }, { name: "edit-turn:2" }]),
-		"/edit-turn:2",
-	);
 });
 
 test("session lifecycle clears hotkey drafts before a replacement session starts", async () => {

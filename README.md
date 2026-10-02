@@ -72,6 +72,7 @@ npm run check
 ```
 
 - `npm test` runs `node --test` directly on TypeScript, including real `createAgentSession()` navigation and `InteractiveMode` shortcut/editor/pointer/replacement/external-editor tests in both TUI modes, without model calls or operator UI changes
+- Shortcut dispatch belongs to the registered-command boundary tests; avoid exporting a private name-selection helper just to repeat that coverage. Keep controlled draft-rejection tests for faults the native UI scenarios cannot inject.
 - `npm run typecheck` runs `tsc` (no emit)
 - `npm run check` runs both plus `npm pack --dry-run`; `check:compat` and `prepublishOnly` call it
 

@@ -4,7 +4,7 @@ A [pi](https://github.com/earendil-works/pi) extension that lets you rewind to a
 
 ## Compatibility
 
-Requires Pi `1.0.0` or later and Node.js `>=24.15.0`. Development and standalone/packed qualification use the official Pi 1.0.0 cohort. CI records the maintained [`fitchmultz/pi`](https://github.com/fitchmultz/pi) fork's exact revision and qualifies supported hosts; an older fork is truthfully recorded as unattempted, not passing. Pi core packages are optional wildcard peers: the extension uses the host's bundled runtime rather than installing another copy.
+Requires Pi `1.0.0` or later and Node.js `>=24.15.0`. CI and standalone/packed qualification use the latest stable official Pi and latest maintained [`fitchmultz/pi`](https://github.com/fitchmultz/pi) fork `main`, resolving version/commit once per workflow run and retaining exact SDK/CLI evidence. Locked development dependencies are reproducible snapshots, not qualification targets; fork qualification is required, not optional. Pi core packages are optional wildcard peers: the extension uses the host's bundled runtime rather than installing another copy.
 
 ## What it does
 
@@ -64,6 +64,14 @@ Submitting an empty user message deletes it: pi rewinds to just before that mess
 - Canonical `context_edit` entries intentionally are not used for rewinding: they alter earlier context while retaining later turns, which is not this command's edit/delete-and-continue behavior
 - The shortcut follows Pi's focus and shortcut-conflict rules. Custom editors built on Pi's `CustomEditor` receive it natively
 
+For latest-host qualification, run `node /path/to/automation/scripts/qualify.mjs --repo pi-edit-session-in-place --source "$PWD" --host official --target latest --output /tmp/pi-edit-session-in-place-official`, then qualify the packed latest maintained fork with `--host fork --target /path/to/fork-package`. Plain `npm ci` checks only the locked development snapshot, not latest qualification.
+
+## Automatic npm releases (maintainers)
+
+Follow the [shared release procedure](https://github.com/fitchmultz/.github#automatic-npm-releases): merge a reviewed PR into `main` with an intentional `package.json` version bump and a matching versioned `CHANGELOG.md` section. Once configured and enabled, publication is unattended after the existing compatibility checks and candidate-tarball qualification pass. Complete any applicable package-specific release evidence before merging the bump. Automation never bumps versions, overwrites releases, or republishes an existing version; existing manual publisher instructions remain valid.
+
+Failed/unpublished candidates can retry daily at 12:17 UTC or via manual dispatch of `npm release` on `main`, without another bump. Set repository variable `NPM_RELEASE_ENABLED` to anything other than `true` to stop new release plans; cancel pending runs separately when needed. Workflow validation is not evidence of a completed real OIDC publication.
+
 ## Development
 
 ```bash
@@ -78,4 +86,4 @@ npm run check
 
 For interactive testing, load the source directly: `pi -e ./extensions/edit-session-in-place.ts`.
 
-The required `compatibility / compatibility` check records and builds supported fork revisions, then runs the shared [`fitchmultz/.github`](https://github.com/fitchmultz/.github) qualification against official Pi and the fork: package contracts, a fresh Git install, an npm tarball install, and the real bundled Pi CLI. `PI_COMPAT_EXPECTED_VERSION` and `PI_COMPAT_EXPECTED_PACKAGE_DIR` let the tests assert which host they imported; without them the tests assert the pinned official version in local `node_modules`.
+The required `compatibility / compatibility` check records and builds the latest maintained fork revision, then runs the shared [`fitchmultz/.github`](https://github.com/fitchmultz/.github) qualification against official Pi and the fork: package contracts, a fresh Git install, an npm tarball install, and the real bundled Pi CLI. `PI_COMPAT_EXPECTED_VERSION` and `PI_COMPAT_EXPECTED_PACKAGE_DIR` let the tests assert which host they imported; without them the tests assert the pinned official version in local `node_modules`.

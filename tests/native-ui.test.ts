@@ -27,6 +27,7 @@ class MemoryTerminal implements Terminal {
   clearScreen() {}
   setTitle(_title: string) {}
   setProgress(_active: boolean) {}
+  setProgramStatus() {}
   send(data: string) { assert.ok(this.onInput); this.onInput(data); }
   resize(columns: number, rows: number) { this.columns = columns; this.rows = rows; this.onResize?.(); }
 }
